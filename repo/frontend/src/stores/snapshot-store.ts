@@ -70,12 +70,6 @@ export const useSnapshotStore = defineStore('snapshot', () => {
     actor: ActivityActor
   ): Promise<RollbackMetadata | null> {
     const ui = useUiStore()
-    const gate = await ensureActiveMembership(roomId, actor.memberId)
-    if (!gate.valid) {
-      lastError.value = gate.errors[0]?.message ?? 'You are not authorized to roll back.'
-      ui.toast.error('Rollback blocked: active membership required.')
-      return null
-    }
     const confirmed = await ui.confirm({
       title: 'Roll back to this snapshot?',
       message:
@@ -85,6 +79,13 @@ export const useSnapshotStore = defineStore('snapshot', () => {
       danger: true,
     })
     if (!confirmed) return null
+
+    const gate = await ensureActiveMembership(roomId, actor.memberId)
+    if (!gate.valid) {
+      lastError.value = gate.errors[0]?.message ?? 'You are not authorized to roll back.'
+      ui.toast.error('Rollback blocked: active membership required.')
+      return null
+    }
 
     isRollingBack.value = true
     lastError.value = null

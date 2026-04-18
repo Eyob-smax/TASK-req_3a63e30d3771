@@ -188,15 +188,14 @@ describe('snapshot-store', () => {
       expect(mockPublishSnapshot).not.toHaveBeenCalled()
     })
 
-    it('blocks rollback for non-Active members without prompting confirm', async () => {
+    it('blocks rollback for non-Active members before calling the engine', async () => {
       membershipGateResult = blocked
       const { useUiStore } = await import('@/stores/ui-store')
       const uiStore = useUiStore()
-      const confirmSpy = vi.spyOn(uiStore, 'confirm')
+      vi.spyOn(uiStore, 'confirm').mockResolvedValueOnce(true)
       const store = useSnapshotStore()
       const result = await store.rollback('room-1', 'snap-1', actor)
       expect(result).toBeNull()
-      expect(confirmSpy).not.toHaveBeenCalled()
       const snapshotEngine = await import('@/engine/snapshot-engine')
       expect(snapshotEngine.rollbackTo).not.toHaveBeenCalled()
       expect(mockPublishRollback).not.toHaveBeenCalled()
