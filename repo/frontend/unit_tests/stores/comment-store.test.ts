@@ -7,8 +7,9 @@ import type { MemberRecord } from '@/models/room'
 import type { CommentThread, Comment } from '@/models/comment'
 import { validResult } from '@/models/validation'
 
-const { listByRoomMock, engineMocks, loggerError } = vi.hoisted(() => ({
+const { listByRoomMock, getThreadByIdMock, engineMocks, loggerError } = vi.hoisted(() => ({
   listByRoomMock: vi.fn<any, Promise<CommentThread[]>>(),
+  getThreadByIdMock: vi.fn<any, Promise<CommentThread | undefined>>(),
   engineMocks: {
     listComments: vi.fn<any, Promise<Comment[]>>(),
     createThread: vi.fn(),
@@ -21,6 +22,7 @@ const { listByRoomMock, engineMocks, loggerError } = vi.hoisted(() => ({
 vi.mock('@/services/comment-thread-repository', () => ({
   commentThreadRepository: {
     listByRoom: (...args: any[]) => listByRoomMock(...args),
+    getById: (...args: any[]) => getThreadByIdMock(...args),
   },
 }))
 
@@ -28,6 +30,11 @@ vi.mock('@/engine/comment-engine', () => engineMocks)
 
 vi.mock('@/utils/logger', () => ({
   logger: { error: loggerError, info: vi.fn(), warn: vi.fn() },
+}))
+
+let membershipGateResult: { valid: boolean; errors: any[] } = { valid: true, errors: [] }
+vi.mock('@/services/membership-gate', () => ({
+  ensureActiveMembership: vi.fn(async () => membershipGateResult),
 }))
 
 import { useCommentStore } from '@/stores/comment-store'
@@ -63,6 +70,7 @@ describe('comment-store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    membershipGateResult = { valid: true, errors: [] }
   })
 
   it('loadThreads populates threads from the repository', async () => {
@@ -151,5 +159,38 @@ describe('comment-store', () => {
     const result = store.resolveMentions('al', members)
     expect(engineMocks.resolveMentions).toHaveBeenCalledWith('al', members, new Set())
     expect(result[0].memberId).toBe('m1')
+  })
+
+  describe('membership gate enforcement', () => {
+    const blocked = {
+      valid: false,
+      errors: [{ field: 'membershipState', message: 'Non-active member.', code: 'invalid_transition' }],
+    }
+
+    it('blocks createThread for non-Active members and does not call the engine', async () => {
+      membershipGateResult = blocked
+      const store = useCommentStore()
+      const result = await store.createThread({
+        roomId: 'r1',
+        elementId: 'el-1',
+        starter: { authorId: 'a', authorDisplayName: 'A', text: 'hi' },
+      } as any)
+      expect(result.validation.valid).toBe(false)
+      expect(engineMocks.createThread).not.toHaveBeenCalled()
+    })
+
+    it('blocks appendComment for non-Active members and does not call the engine', async () => {
+      membershipGateResult = blocked
+      getThreadByIdMock.mockResolvedValueOnce(makeThread('t1'))
+      const store = useCommentStore()
+      const result = await store.appendComment({
+        threadId: 't1',
+        authorId: 'a',
+        authorDisplayName: 'A',
+        text: 'blocked',
+      } as any)
+      expect(result.validation.valid).toBe(false)
+      expect(engineMocks.appendComment).not.toHaveBeenCalled()
+    })
   })
 })

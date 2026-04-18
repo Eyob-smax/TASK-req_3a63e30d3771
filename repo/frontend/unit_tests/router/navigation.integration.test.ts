@@ -1,12 +1,35 @@
 // REQ: R12/R13 — Router navigation integration with real guards and session state
+// REQ: R1/R3 — Workspace membership guard denies non-Active members at the route layer
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import { routes } from '@/router'
-import { installSessionGuard } from '@/router/guards'
+import { installSessionGuard, installWorkspaceMembershipGuard } from '@/router/guards'
 import { SessionState } from '@/models/profile'
+import { MembershipState, RoomRole } from '@/models/room'
 import { useSessionStore } from '@/stores/session-store'
+
+const findMock = vi.fn()
+vi.mock('@/services/member-repository', () => ({
+  memberRepository: {
+    find: (...args: unknown[]) => findMock(...args),
+  },
+}))
+
+function makeMember(state: MembershipState) {
+  return {
+    roomId: 'room-42',
+    memberId: 'me',
+    displayName: 'Me',
+    avatarColor: '#fff',
+    role: RoomRole.Participant,
+    state,
+    joinedAt: '2026-01-01T00:00:00.000Z',
+    stateChangedAt: '2026-01-01T00:00:00.000Z',
+    approvals: [],
+  }
+}
 
 const PUBLIC_PATHS = ['/', '/profile']
 const GUARDED_PATHS = [
@@ -94,5 +117,103 @@ describe('router navigation integration', () => {
 
     await router.push('/workspace/gamma-room/backup')
     expect(router.currentRoute.value.params.roomId).toBe('gamma-room')
+  })
+})
+
+describe('workspace membership guard integration', () => {
+  function createMembershipGuardedRouter() {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes,
+    })
+    installSessionGuard(router)
+    installWorkspaceMembershipGuard(router)
+    return router
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    findMock.mockReset()
+  })
+
+  it('allows Active member to reach /workspace/:roomId', async () => {
+    findMock.mockResolvedValueOnce(makeMember(MembershipState.Active))
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('workspace')
+    expect(router.currentRoute.value.params.roomId).toBe('room-42')
+  })
+
+  it('redirects Requested member to room-join', async () => {
+    findMock.mockResolvedValueOnce(makeMember(MembershipState.Requested))
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('room-join')
+  })
+
+  it('redirects PendingSecondApproval member to room-join', async () => {
+    findMock.mockResolvedValueOnce(makeMember(MembershipState.PendingSecondApproval))
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('room-join')
+  })
+
+  it('redirects Left member to room-list', async () => {
+    findMock.mockResolvedValueOnce(makeMember(MembershipState.Left))
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('room-list')
+  })
+
+  it('redirects Rejected member to room-list', async () => {
+    findMock.mockResolvedValueOnce(makeMember(MembershipState.Rejected))
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('room-list')
+  })
+
+  it('redirects unknown member (no membership record) to room-list', async () => {
+    findMock.mockResolvedValueOnce(undefined)
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('room-list')
+  })
+
+  it('leaves non-workspace routes alone (membership guard bypassed)', async () => {
+    const session = useSessionStore()
+    session.sessionState = SessionState.Active
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/rooms')
+    expect(router.currentRoute.value.name).toBe('room-list')
+    expect(findMock).not.toHaveBeenCalled()
+  })
+
+  it('defers to session guard when session is not Active (no membership lookup)', async () => {
+    const session = useSessionStore()
+    session.sessionState = SessionState.Locked
+    session.activeProfileId = 'me'
+    const router = createMembershipGuardedRouter()
+    await router.push('/workspace/room-42')
+    expect(router.currentRoute.value.name).toBe('profile-select')
+    expect(findMock).not.toHaveBeenCalled()
   })
 })

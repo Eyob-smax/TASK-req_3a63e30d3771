@@ -1,4 +1,5 @@
 // REQ: R7 — Thin harness exposing comment engine to UI
+// REQ: R1/R3/R4 — Write paths block non-Active members via ensureActiveMembership
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -8,6 +9,7 @@ import * as commentEngine from '@/engine/comment-engine'
 import { commentThreadRepository } from '@/services/comment-thread-repository'
 import { publishElement } from '@/services/collab-publisher'
 import { publishComment } from '@/services/collab-publisher'
+import { ensureActiveMembership } from '@/services/membership-gate'
 import { logger } from '@/utils/logger'
 
 export const useCommentStore = defineStore('comment', () => {
@@ -35,6 +37,8 @@ export const useCommentStore = defineStore('comment', () => {
   }
 
   async function createThread(input: commentEngine.CreateThreadInput) {
+    const gate = await ensureActiveMembership(input.roomId, input.starter.authorId)
+    if (!gate.valid) return { validation: gate }
     const result = await commentEngine.createThread(input)
     if (result.thread) {
       threads.value.push(result.thread)
@@ -61,6 +65,11 @@ export const useCommentStore = defineStore('comment', () => {
   }
 
   async function appendComment(input: commentEngine.AppendCommentInput) {
+    const thread = await commentThreadRepository.getById(input.threadId)
+    if (thread) {
+      const gate = await ensureActiveMembership(thread.roomId, input.authorId)
+      if (!gate.valid) return { validation: gate }
+    }
     const result = await commentEngine.appendComment(input)
     if (result.thread) {
       const idx = threads.value.findIndex((t) => t.threadId === result.thread!.threadId)

@@ -20,6 +20,7 @@ import { publishPresence } from '@/services/collab-publisher'
 import { elementRepository } from '@/services/element-repository'
 import { startRoomScheduler, stopRoomScheduler } from '@/engine/autosave-scheduler'
 import { RoomRole, MembershipState } from '@/models/room'
+import { canMemberAct } from '@/validators/room-validators'
 import AppLayout from '@/layouts/AppLayout.vue'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout.vue'
 import WorkspaceToolbar from '@/components/workspace/WorkspaceToolbar.vue'
@@ -79,7 +80,7 @@ const isReviewer = computed(() =>
 
 const isStale = computed(() => activeMember.value?.state === MembershipState.Left)
 
-const canAct = computed(() => !isStale.value && !!activeMember.value)
+const canAct = computed(() => canMemberAct(activeMember.value?.state))
 
 const actor = computed<ActivityActor>(() => ({
   memberId:
@@ -160,6 +161,33 @@ onMounted(async () => {
       return
     }
 
+    // Enforce active membership before entering the workspace. Non-Active members
+    // (missing, Requested, PendingSecondApproval, Left, Rejected) must not be able
+    // to act on the room's data or attach broadcast/WebRTC adaptors.
+    const member = activeMember.value
+    if (!member) {
+      uiStore.toast.error('You are not a member of this room.')
+      await router.push({ name: 'room-list' })
+      return
+    }
+    if (member.state !== MembershipState.Active) {
+      const pairingCode = roomStore.activeRoom.pairingCode
+      if (
+        member.state === MembershipState.Requested ||
+        member.state === MembershipState.PendingSecondApproval
+      ) {
+        uiStore.toast.info('Your join request is still awaiting approval.')
+        await router.push({ name: 'room-join', query: pairingCode ? { code: pairingCode } : {} })
+      } else if (member.state === MembershipState.Rejected) {
+        uiStore.toast.error('Your join request was rejected.')
+        await router.push({ name: 'room-list' })
+      } else {
+        uiStore.toast.error('You have left this room.')
+        await router.push({ name: 'room-list' })
+      }
+      return
+    }
+
     await Promise.all([
       elementStore.loadElements(props.roomId),
       chatStore.loadChat(props.roomId),
@@ -175,7 +203,7 @@ onMounted(async () => {
 
     startRoomScheduler(props.roomId, {
       onAutoSave: async () => {
-        if (isStale.value) return
+        if (!canAct.value) return
         autosaveStatus.value = 'saving'
         try {
           // Explicit per-cycle IndexedDB health check: verifies storage is responsive.

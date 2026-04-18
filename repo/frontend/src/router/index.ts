@@ -2,7 +2,7 @@
 // REQ: R12 — Route guard wired via installSessionGuard
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-import { installSessionGuard } from './guards'
+import { installSessionGuard, installWorkspaceMembershipGuard } from './guards'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -57,5 +57,8 @@ export const router = createRouter({
 
 // Install the session guard — Pinia must be initialized before navigation fires.
 installSessionGuard(router)
+// Install the workspace membership guard after the session guard so that
+// unlocked-but-non-member access to /workspace/:roomId is redirected.
+installWorkspaceMembershipGuard(router)
 
 export { routes }

@@ -81,10 +81,10 @@ Notes:
 ## Testing (Docker-Only)
 
 ```bash
-bash repo/run_tests.sh               # frontend unit/integration suite
-bash repo/run_tests.sh --coverage    # unit/integration + V8 coverage reports
-bash repo/run_tests.sh --e2e         # Playwright browser journey suite
-bash repo/run_tests.sh --all         # coverage suite + Playwright e2e suite
+bash repo/run_tests.sh               # unit/integration suite, then Playwright e2e suite
+bash repo/run_tests.sh --coverage    # unit/integration with V8 coverage, then Playwright e2e suite
+bash repo/run_tests.sh --e2e         # Playwright browser journey suite only
+bash repo/run_tests.sh --all         # coverage suite + Playwright e2e suite (alias for --coverage)
 ```
 
 Coverage thresholds:

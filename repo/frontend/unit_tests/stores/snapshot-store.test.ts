@@ -63,6 +63,15 @@ vi.mock('@/stores/comment-store', () => ({
   useCommentStore: () => ({ loadThreads: mockLoadThreads }),
 }))
 
+vi.mock('@/stores/session-store', () => ({
+  useSessionStore: () => ({ activeProfileId: 'member-1' }),
+}))
+
+let membershipGateResult: { valid: boolean; errors: any[] } = { valid: true, errors: [] }
+vi.mock('@/services/membership-gate', () => ({
+  ensureActiveMembership: vi.fn(async () => membershipGateResult),
+}))
+
 const actor = { memberId: 'member-1', displayName: 'Alice', role: RoomRole.Host }
 
 describe('snapshot-store', () => {
@@ -75,6 +84,7 @@ describe('snapshot-store', () => {
     mockLoadElements.mockResolvedValue(undefined)
     mockLoadChat.mockResolvedValue(undefined)
     mockLoadThreads.mockResolvedValue(undefined)
+    membershipGateResult = { valid: true, errors: [] }
   })
 
   describe('refresh', () => {
@@ -159,6 +169,37 @@ describe('snapshot-store', () => {
       expect(result).toBeNull()
       expect(store.isRollingBack).toBe(false)
       expect(store.lastError).toBe('Rollback failed. Please try again.')
+    })
+  })
+
+  describe('membership gate enforcement', () => {
+    const blocked = {
+      valid: false,
+      errors: [{ field: 'membershipState', message: 'Non-active member.', code: 'invalid_transition' }],
+    }
+
+    it('blocks captureManual for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useSnapshotStore()
+      const result = await store.captureManual('room-1')
+      expect(result).toBeNull()
+      const snapshotEngine = await import('@/engine/snapshot-engine')
+      expect(snapshotEngine.captureSnapshot).not.toHaveBeenCalled()
+      expect(mockPublishSnapshot).not.toHaveBeenCalled()
+    })
+
+    it('blocks rollback for non-Active members without prompting confirm', async () => {
+      membershipGateResult = blocked
+      const { useUiStore } = await import('@/stores/ui-store')
+      const uiStore = useUiStore()
+      const confirmSpy = vi.spyOn(uiStore, 'confirm')
+      const store = useSnapshotStore()
+      const result = await store.rollback('room-1', 'snap-1', actor)
+      expect(result).toBeNull()
+      expect(confirmSpy).not.toHaveBeenCalled()
+      const snapshotEngine = await import('@/engine/snapshot-engine')
+      expect(snapshotEngine.rollbackTo).not.toHaveBeenCalled()
+      expect(mockPublishRollback).not.toHaveBeenCalled()
     })
   })
 

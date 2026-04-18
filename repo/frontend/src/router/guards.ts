@@ -1,9 +1,12 @@
 // REQ: R12 — Route guards for locked vs unlocked session states
 // REQ: R13 — Redirect to /profile when inactivity lock or forced sign-out fires
+// REQ: R1/R3 — Workspace routes additionally require active room membership
 
-import type { Router, RouteLocationNormalized } from 'vue-router'
+import type { Router, RouteLocationNormalized, RouteLocationRaw } from 'vue-router'
 import { SessionState } from '@/models/profile'
+import { MembershipState } from '@/models/room'
 import { useSessionStore } from '@/stores/session-store'
+import { memberRepository } from '@/services/member-repository'
 
 /**
  * Route names that require an active (unlocked) session.
@@ -52,5 +55,69 @@ export function installSessionGuard(router: Router): void {
   router.beforeEach((to: RouteLocationNormalized) => {
     const session = useSessionStore()
     return shouldAllowNavigation(to.name, session.sessionState, to.fullPath)
+  })
+}
+
+/**
+ * Route names that resolve to the collaboration workspace. These routes
+ * additionally require an *active* room membership, not just an unlocked session.
+ */
+export const WORKSPACE_ROUTES = new Set<string>([
+  'workspace',
+  'workspace-settings',
+  'workspace-backup',
+])
+
+/**
+ * Pure async guard deciding whether a profile is allowed to open a workspace route.
+ *
+ * Returns `true` when the member record exists for (roomId, profileId) and is Active.
+ * Otherwise returns a redirect descriptor:
+ *   - Requested / PendingSecondApproval → `room-join` (awaiting approval surface)
+ *   - Left / Rejected / missing → `room-list`
+ *
+ * Extracted as a pure function so it can be unit-tested without a router.
+ */
+export async function shouldAllowWorkspaceAccess(
+  roomId: string | undefined,
+  profileId: string | null,
+): Promise<true | RouteLocationRaw> {
+  if (!roomId || !profileId) {
+    return { name: 'room-list' }
+  }
+  const member = await memberRepository.find(roomId, profileId)
+  if (!member) {
+    return { name: 'room-list' }
+  }
+  if (member.state === MembershipState.Active) {
+    return true
+  }
+  if (
+    member.state === MembershipState.Requested ||
+    member.state === MembershipState.PendingSecondApproval
+  ) {
+    return { name: 'room-join' }
+  }
+  return { name: 'room-list' }
+}
+
+/**
+ * Install the workspace membership guard. Runs after the session guard so that
+ * unlocked-but-non-member navigation cannot reach the workspace surface.
+ *
+ * Public and non-workspace routes are allowed through unchanged.
+ */
+export function installWorkspaceMembershipGuard(router: Router): void {
+  router.beforeEach(async (to: RouteLocationNormalized) => {
+    if (!WORKSPACE_ROUTES.has(String(to.name))) return true
+
+    const session = useSessionStore()
+    if (session.sessionState !== SessionState.Active) {
+      // Session guard already redirected; let that decision stand.
+      return true
+    }
+
+    const roomId = typeof to.params.roomId === 'string' ? to.params.roomId : undefined
+    return shouldAllowWorkspaceAccess(roomId, session.activeProfileId)
   })
 }

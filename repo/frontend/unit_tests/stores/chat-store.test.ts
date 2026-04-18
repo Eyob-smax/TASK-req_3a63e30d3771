@@ -61,12 +61,18 @@ vi.mock('@/utils/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }))
 
+let membershipGateResult: { valid: boolean; errors: any[] } = { valid: true, errors: [] }
+vi.mock('@/services/membership-gate', () => ({
+  ensureActiveMembership: vi.fn(async () => membershipGateResult),
+}))
+
 const actor = { memberId: 'member-1', displayName: 'Alice', role: RoomRole.Reviewer }
 
 describe('chat-store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    membershipGateResult = { valid: true, errors: [] }
   })
 
   describe('loadChat', () => {
@@ -259,6 +265,49 @@ describe('chat-store', () => {
       const store = useChatStore()
       await store.pinMessage('room-1', 'msg-2', actor)
       expect(mockPublishConflict).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('membership gate enforcement', () => {
+    const blocked = {
+      valid: false,
+      errors: [{ field: 'membershipState', message: 'Non-active member.', code: 'invalid_transition' }],
+    }
+
+    it('blocks sendMessage for non-Active members and does not publish', async () => {
+      membershipGateResult = blocked
+      const store = useChatStore()
+      const result = await store.sendMessage({
+        roomId: 'room-1',
+        text: 'Hello',
+        authorId: 'member-1',
+        authorDisplayName: 'Alice',
+        authorAvatarColor: '#ff0000',
+      } as any)
+      expect(result.validation.valid).toBe(false)
+      const chatEngine = await import('@/engine/chat-engine')
+      expect(chatEngine.sendMessage).not.toHaveBeenCalled()
+      expect(mockPublishChat).not.toHaveBeenCalled()
+    })
+
+    it('blocks pinMessage for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useChatStore()
+      const result = await store.pinMessage('room-1', 'msg-2', actor)
+      expect(result.validation.valid).toBe(false)
+      const chatEngine = await import('@/engine/chat-engine')
+      expect(chatEngine.pinMessage).not.toHaveBeenCalled()
+      expect(mockPublishPin).not.toHaveBeenCalled()
+    })
+
+    it('blocks unpinMessage for non-Active members and leaves pinned list intact', async () => {
+      membershipGateResult = blocked
+      const store = useChatStore()
+      store.pinned = [mockPinned] as any
+      const result = await store.unpinMessage('room-1', 'msg-1', actor)
+      expect(result.valid).toBe(false)
+      expect(store.pinned).toHaveLength(1)
+      expect(mockPublishPin).not.toHaveBeenCalled()
     })
   })
 })

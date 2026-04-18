@@ -89,25 +89,28 @@ import ChatPanel from '@/components/workspace/ChatPanel.vue'
 import CommentDrawer from '@/components/workspace/CommentDrawer.vue'
 import { RoomRole, MembershipState } from '@/models/room'
 
-async function mountIntegrated() {
+async function mountIntegrated(opts: { memberState?: MembershipState | null; pairingCode?: string } = {}) {
+  const memberState = opts.memberState === undefined ? MembershipState.Active : opts.memberState
   const room = useRoomStore()
   const session = useSessionStore()
   session.activeProfileId = 'me'
   session.activeProfile = { profileId: 'me', displayName: 'Me', avatarColor: '#f00' } as any
   vi.spyOn(room, 'loadRoom').mockImplementation(async () => {
-    room.activeRoom = { roomId: 'room-1', name: 'R' } as any
-    room.members = [
-      {
-        memberId: 'me',
-        roomId: 'room-1',
-        displayName: 'Me',
-        role: RoomRole.Participant,
-        state: MembershipState.Active,
-        avatarColor: '#f00',
-        joinedAt: '2026-04-01T00:00:00Z',
-        updatedAt: '2026-04-01T00:00:00Z',
-      } as any,
-    ]
+    room.activeRoom = { roomId: 'room-1', name: 'R', pairingCode: opts.pairingCode } as any
+    room.members = memberState === null
+      ? []
+      : [
+          {
+            memberId: 'me',
+            roomId: 'room-1',
+            displayName: 'Me',
+            role: RoomRole.Participant,
+            state: memberState,
+            avatarColor: '#f00',
+            joinedAt: '2026-04-01T00:00:00Z',
+            updatedAt: '2026-04-01T00:00:00Z',
+          } as any,
+        ]
   })
   const element = useElementStore()
   const chat = useChatStore()
@@ -158,6 +161,43 @@ describe('WorkspacePage — real child component integration', () => {
     await flushPromises()
     const drawer = wrapper.findComponent(CommentDrawer)
     expect(drawer.props('elementId')).toBe('el-real-seed')
+  })
+
+  describe('membership denial matrix', () => {
+    it('redirects to room-list when profile has no matching member record', async () => {
+      await mountIntegrated({ memberState: null })
+      expect(mockPush).toHaveBeenCalledWith({ name: 'room-list' })
+    })
+
+    it('redirects Requested members to room-join with pairing code', async () => {
+      await mountIntegrated({ memberState: MembershipState.Requested, pairingCode: 'PAIR-123' })
+      expect(mockPush).toHaveBeenCalledWith({ name: 'room-join', query: { code: 'PAIR-123' } })
+    })
+
+    it('redirects PendingSecondApproval members to room-join', async () => {
+      await mountIntegrated({ memberState: MembershipState.PendingSecondApproval })
+      expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ name: 'room-join' }))
+    })
+
+    it('redirects Rejected members to room-list', async () => {
+      await mountIntegrated({ memberState: MembershipState.Rejected })
+      expect(mockPush).toHaveBeenCalledWith({ name: 'room-list' })
+    })
+
+    it('redirects Left members to room-list', async () => {
+      await mountIntegrated({ memberState: MembershipState.Left })
+      expect(mockPush).toHaveBeenCalledWith({ name: 'room-list' })
+    })
+
+    it('does not attach broadcast/webrtc adaptors or load stores for non-Active members', async () => {
+      const broadcast = await import('@/services/broadcast-adaptor')
+      const webrtc = await import('@/services/webrtc-adaptor')
+      await mountIntegrated({ memberState: MembershipState.Requested, pairingCode: 'P-1' })
+      expect(broadcast.attachRoomBroadcast).not.toHaveBeenCalled()
+      expect(webrtc.attachWebRTCAdaptor).not.toHaveBeenCalled()
+      const element = useElementStore()
+      expect(element.loadElements).not.toHaveBeenCalled()
+    })
   })
 
   it('updates the presence store and publishes presence when the real CanvasHost emits cursor-move', async () => {

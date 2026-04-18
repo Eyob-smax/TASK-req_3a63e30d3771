@@ -1,4 +1,5 @@
 // REQ: R17 — Thin harness exposing snapshot + rollback engine to UI
+// REQ: R1/R3/R4 — Manual snapshot + rollback require Active membership
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -9,7 +10,9 @@ import { useUiStore } from '@/stores/ui-store'
 import { useElementStore } from '@/stores/element-store'
 import { useChatStore } from '@/stores/chat-store'
 import { useCommentStore } from '@/stores/comment-store'
+import { useSessionStore } from '@/stores/session-store'
 import { publishSnapshot, publishRollback } from '@/services/collab-publisher'
+import { ensureActiveMembership } from '@/services/membership-gate'
 import { logger } from '@/utils/logger'
 
 export const useSnapshotStore = defineStore('snapshot', () => {
@@ -33,6 +36,17 @@ export const useSnapshotStore = defineStore('snapshot', () => {
   }
 
   async function captureManual(roomId: string): Promise<Snapshot | null> {
+    const session = useSessionStore()
+    const actingMemberId = session.activeProfileId
+    if (!actingMemberId) {
+      lastError.value = 'No active profile to capture snapshot.'
+      return null
+    }
+    const gate = await ensureActiveMembership(roomId, actingMemberId)
+    if (!gate.valid) {
+      lastError.value = gate.errors[0]?.message ?? 'You are not authorized to capture snapshots.'
+      return null
+    }
     try {
       const snap = await snapshotEngine.captureSnapshot(roomId, 'manual')
       snapshots.value.push(snap)
@@ -56,6 +70,12 @@ export const useSnapshotStore = defineStore('snapshot', () => {
     actor: ActivityActor
   ): Promise<RollbackMetadata | null> {
     const ui = useUiStore()
+    const gate = await ensureActiveMembership(roomId, actor.memberId)
+    if (!gate.valid) {
+      lastError.value = gate.errors[0]?.message ?? 'You are not authorized to roll back.'
+      ui.toast.error('Rollback blocked: active membership required.')
+      return null
+    }
     const confirmed = await ui.confirm({
       title: 'Roll back to this snapshot?',
       message:

@@ -1,4 +1,5 @@
 // REQ: R5/R6 — Thin harness exposing element + image engines to UI
+// REQ: R1/R3/R4 — Write paths block non-Active members via ensureActiveMembership
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -7,6 +8,9 @@ import * as elementEngine from '@/engine/element-engine'
 import * as imageEngine from '@/engine/image-engine'
 import { publishElement, publishConflict } from '@/services/collab-publisher'
 import { getLocalTabId } from '@/services/broadcast-channel-service'
+import { ensureActiveMembership } from '@/services/membership-gate'
+import { elementRepository } from '@/services/element-repository'
+import { invalidResult } from '@/models/validation'
 import { logger } from '@/utils/logger'
 
 export const useElementStore = defineStore('element', () => {
@@ -28,6 +32,8 @@ export const useElementStore = defineStore('element', () => {
   }
 
   async function createSticky(input: elementEngine.CreateStickyInput) {
+    const gate = await ensureActiveMembership(input.roomId, input.actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await elementEngine.createSticky(input)
     if (result.element) {
       elements.value.push(result.element)
@@ -43,6 +49,8 @@ export const useElementStore = defineStore('element', () => {
   }
 
   async function createArrow(input: elementEngine.CreateArrowInput) {
+    const gate = await ensureActiveMembership(input.roomId, input.actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await elementEngine.createArrow(input)
     if (result.element) {
       elements.value.push(result.element)
@@ -58,6 +66,8 @@ export const useElementStore = defineStore('element', () => {
   }
 
   async function createPenStroke(input: elementEngine.CreatePenStrokeInput) {
+    const gate = await ensureActiveMembership(input.roomId, input.actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await elementEngine.createPenStroke(input)
     if (result.element) {
       elements.value.push(result.element)
@@ -73,6 +83,8 @@ export const useElementStore = defineStore('element', () => {
   }
 
   async function ingestImage(input: imageEngine.IngestImageInput) {
+    const gate = await ensureActiveMembership(input.roomId, input.actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await imageEngine.ingestImageFile(input)
     if (result.element) {
       elements.value.push(result.element)
@@ -93,6 +105,14 @@ export const useElementStore = defineStore('element', () => {
     actor: Parameters<typeof elementEngine.updateElement>[2]
   ) {
     const local = elements.value.find((e) => e.elementId === elementId)
+    const target = local ?? (await elementRepository.getById(elementId))
+    if (!target) {
+      return {
+        validation: invalidResult('elementId', 'Element not found.', 'not_found', elementId),
+      }
+    }
+    const gate = await ensureActiveMembership(target.roomId, actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await elementEngine.updateElement(elementId, patch, actor)
     if (result.element) {
       const idx = elements.value.findIndex((e) => e.elementId === elementId)
@@ -124,6 +144,14 @@ export const useElementStore = defineStore('element', () => {
     actor: Parameters<typeof elementEngine.deleteElement>[1]
   ) {
     const existing = elements.value.find((e) => e.elementId === elementId)
+    const target = existing ?? (await elementRepository.getById(elementId))
+    if (!target) {
+      return {
+        validation: invalidResult('elementId', 'Element not found.', 'not_found', elementId),
+      }
+    }
+    const gate = await ensureActiveMembership(target.roomId, actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await elementEngine.deleteElement(elementId, actor)
     if (result.validation.valid) {
       elements.value = elements.value.filter((e) => e.elementId !== elementId)
@@ -138,6 +166,15 @@ export const useElementStore = defineStore('element', () => {
     elementId: string,
     actor: Parameters<typeof elementEngine.bringToFront>[1]
   ) {
+    const existing = elements.value.find((e) => e.elementId === elementId)
+    const target = existing ?? (await elementRepository.getById(elementId))
+    if (!target) {
+      return {
+        validation: invalidResult('elementId', 'Element not found.', 'not_found', elementId),
+      }
+    }
+    const gate = await ensureActiveMembership(target.roomId, actor.memberId)
+    if (!gate.valid) return { validation: gate }
     const result = await elementEngine.bringToFront(elementId, actor)
     if (result.element) {
       const idx = elements.value.findIndex((e) => e.elementId === elementId)

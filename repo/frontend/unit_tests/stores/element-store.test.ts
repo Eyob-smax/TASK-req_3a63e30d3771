@@ -71,12 +71,18 @@ vi.mock('@/utils/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }))
 
+let membershipGateResult: { valid: boolean; errors: any[] } = { valid: true, errors: [] }
+vi.mock('@/services/membership-gate', () => ({
+  ensureActiveMembership: vi.fn(async () => membershipGateResult),
+}))
+
 const actor = { memberId: 'member-1', displayName: 'Alice', role: RoomRole.Participant }
 
 describe('element-store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    membershipGateResult = { valid: true, errors: [] }
   })
 
   describe('loadElements', () => {
@@ -259,6 +265,90 @@ describe('element-store', () => {
       store.elements = [{ ...mockSticky }] as any
       await store.updateElement('el-1', { text: 'Updated' } as any, actor)
       expect(mockPublishConflict).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('membership gate enforcement', () => {
+    const blocked = {
+      valid: false,
+      errors: [{ field: 'membershipState', message: 'Non-active member.', code: 'invalid_transition' }],
+    }
+
+    it('blocks createSticky for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useElementStore()
+      const result = await store.createSticky({
+        roomId: 'room-1',
+        position: { x: 0, y: 0 },
+        size: { width: 200, height: 150 },
+        text: 'Hello',
+        color: '#fff9c4',
+        actor,
+      } as any)
+      expect(result.validation.valid).toBe(false)
+      const elementEngine = await import('@/engine/element-engine')
+      expect(elementEngine.createSticky).not.toHaveBeenCalled()
+      expect(mockPublishElement).not.toHaveBeenCalled()
+    })
+
+    it('blocks createArrow for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useElementStore()
+      const result = await store.createArrow({
+        roomId: 'room-1',
+        startPoint: { x: 0, y: 0 },
+        endPoint: { x: 100, y: 100 },
+        actor,
+      } as any)
+      expect(result.validation.valid).toBe(false)
+      const elementEngine = await import('@/engine/element-engine')
+      expect(elementEngine.createArrow).not.toHaveBeenCalled()
+    })
+
+    it('blocks createPenStroke for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useElementStore()
+      const result = await store.createPenStroke({
+        roomId: 'room-1',
+        points: [{ x: 0, y: 0 }],
+        color: '#000',
+        strokeWidth: 1,
+        actor,
+      } as any)
+      expect(result.validation.valid).toBe(false)
+      const elementEngine = await import('@/engine/element-engine')
+      expect(elementEngine.createPenStroke).not.toHaveBeenCalled()
+    })
+
+    it('blocks updateElement for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useElementStore()
+      store.elements = [{ ...mockSticky }] as any
+      const result = await store.updateElement('el-1', { text: 'x' } as any, actor)
+      expect(result.validation.valid).toBe(false)
+      const elementEngine = await import('@/engine/element-engine')
+      expect(elementEngine.updateElement).not.toHaveBeenCalled()
+    })
+
+    it('blocks deleteElement for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useElementStore()
+      store.elements = [{ ...mockSticky }] as any
+      const result = await store.deleteElement('el-1', actor)
+      expect(result.validation.valid).toBe(false)
+      expect(store.elements).toHaveLength(1)
+      const elementEngine = await import('@/engine/element-engine')
+      expect(elementEngine.deleteElement).not.toHaveBeenCalled()
+    })
+
+    it('blocks bringToFront for non-Active members', async () => {
+      membershipGateResult = blocked
+      const store = useElementStore()
+      store.elements = [{ ...mockSticky }] as any
+      const result = await store.bringToFront('el-1', actor)
+      expect(result.validation.valid).toBe(false)
+      const elementEngine = await import('@/engine/element-engine')
+      expect(elementEngine.bringToFront).not.toHaveBeenCalled()
     })
   })
 })

@@ -63,6 +63,18 @@ export function requiresSecondApproval(
 }
 
 /**
+ * Boolean convenience wrapper over validateMemberCanAct.
+ * Returns true only when the member is currently Active.
+ *
+ * Use this for UI gating (computed props, disabled flags) so the same
+ * rule drives both disabled UI and write-path enforcement and cannot drift.
+ */
+export function canMemberAct(memberState: MembershipState | undefined | null): boolean {
+  if (!memberState) return false
+  return validateMemberCanAct(memberState).valid
+}
+
+/**
  * Validate that a member in the "left" or "rejected" state cannot perform actions.
  * @param memberState The member's current state.
  */
