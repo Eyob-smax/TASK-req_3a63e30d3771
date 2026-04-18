@@ -3,7 +3,8 @@ import { useChatStore } from '@/stores/chat-store'
 import { setupNoMockTestEnv, seedActiveHostRoom, seedActiveSessionProfile } from '../integration/no-mock-test-harness'
 import { chatMessageRepository } from '@/services/chat-message-repository'
 import { pinnedMessageRepository } from '@/services/pinned-message-repository'
-import { RoomRole } from '@/models/room'
+import { memberRepository } from '@/services/member-repository'
+import { MembershipState, RoomRole } from '@/models/room'
 
 function actor(memberId: string, displayName: string) {
   return { memberId, displayName, role: RoomRole.Host }
@@ -205,6 +206,17 @@ describe('chat-store no-mock integration', () => {
   it('supports participant actor for pin operations', async () => {
     const { room, host } = await seedActiveHostRoom()
     const participant = await seedActiveSessionProfile({ displayName: 'Participant Actor' })
+    await memberRepository.put({
+      roomId: room.roomId,
+      memberId: participant.profileId,
+      displayName: participant.displayName,
+      avatarColor: participant.avatarColor,
+      role: RoomRole.Participant,
+      state: MembershipState.Active,
+      joinedAt: new Date().toISOString(),
+      stateChangedAt: new Date().toISOString(),
+      approvals: [],
+    } as any)
     const store = useChatStore()
 
     const sent = await store.sendMessage({
