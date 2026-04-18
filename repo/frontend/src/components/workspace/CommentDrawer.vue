@@ -220,6 +220,7 @@ onMounted(async () => {
 
           <button
             class="comment-drawer__submit"
+            data-testid="comment-submit"
             :disabled="!newCommentText.trim() || disabled || atCommentCap || isSubmitting"
             @click="submitComment"
           >

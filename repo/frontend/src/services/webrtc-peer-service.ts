@@ -172,7 +172,7 @@ export async function acceptAnswer(
   }
   const valid = await verifyPairingChecksum(payload)
   if (!valid) {
-    throw new Error('Pairing answer checksum mismatch.')
+    throw new Error('Pairing answer checksum mismatch — payload may have been tampered with.')
   }
 
   const entry = peers.get(localPeerId)

@@ -185,4 +185,77 @@ describe('CommentDrawer', () => {
       expect(call.authorDisplayName).toBe(TEST_ACTOR.displayName)
     }
   })
+
+  it('selecting a mention inserts display name and closes suggestions', async () => {
+    const wrapper = await mountDrawer()
+    const textarea = wrapper.find('[data-testid="comment-input"]')
+    await textarea.setValue('@al')
+    await textarea.trigger('input')
+    await flushPromises()
+
+    const mentionButton = wrapper.find('.comment-drawer__mention-item')
+    expect(mentionButton.exists()).toBe(true)
+    await mentionButton.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('[data-testid="comment-input"]').element as HTMLTextAreaElement).value).toContain('@Alice ')
+  })
+
+  it('submitComment appends to existing thread and clears input on success', async () => {
+    const wrapper = await mountDrawer()
+    const textarea = wrapper.find('[data-testid="comment-input"]')
+    await textarea.setValue('Follow-up comment')
+    await textarea.trigger('input')
+    await flushPromises()
+
+    await wrapper.find('.comment-drawer__submit').trigger('click')
+    await flushPromises()
+
+    expect(mockAppendComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: 'thread-1',
+        roomId: 'room-1',
+        authorId: TEST_ACTOR.memberId,
+        authorDisplayName: TEST_ACTOR.displayName,
+        text: 'Follow-up comment',
+      })
+    )
+    expect((wrapper.find('[data-testid="comment-input"]').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('submitComment creates a new thread when no thread exists for element', async () => {
+    const loadComments = vi.fn(async () => {})
+    const { useCommentStore } = await import('@/stores/comment-store')
+    vi.mocked(useCommentStore).mockReturnValueOnce({
+      threads: [],
+      commentsByThread: {},
+      isLoading: false,
+      lastError: null,
+      loadThreads: vi.fn(async () => {}),
+      loadComments,
+      createThread: mockCreateThread,
+      appendComment: mockAppendComment,
+      resolveMentions: mockResolveMentions,
+    } as any)
+
+    const wrapper = await mountDrawer({ elementId: 'el-1' })
+    const textarea = wrapper.find('[data-testid="comment-input"]')
+    await textarea.setValue('First thread comment')
+    await textarea.trigger('input')
+    await flushPromises()
+
+    await wrapper.find('.comment-drawer__submit').trigger('click')
+    await flushPromises()
+
+    expect(mockCreateThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomId: 'room-1',
+        elementId: 'el-1',
+        authorId: TEST_ACTOR.memberId,
+        authorDisplayName: TEST_ACTOR.displayName,
+        text: 'First thread comment',
+      })
+    )
+    expect(loadComments).toHaveBeenCalledWith('thread-new')
+  })
 })

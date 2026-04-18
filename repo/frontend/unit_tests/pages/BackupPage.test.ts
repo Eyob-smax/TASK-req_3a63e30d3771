@@ -216,4 +216,144 @@ describe('BackupPage', () => {
     // No manifest parsed yet in this mount — button should not appear
     expect(wrapper.find('[data-testid="confirm-import-btn"]').exists()).toBe(false)
   })
+
+  it('triggerFilePicker clears stale import state and clicks hidden file input', async () => {
+    const wrapper = await mountPage({
+      lastImportResult: {
+        success: true,
+        totalRows: 1,
+        validRows: 1,
+        errorRows: [],
+        warnings: [],
+        truncated: false,
+      },
+      lastError: 'stale error',
+    })
+    const fileInput = wrapper.find('[data-testid="file-input"]').element as HTMLInputElement
+    const clickSpy = vi.spyOn(fileInput, 'click')
+
+    await wrapper.find('[data-testid="pick-file-btn"]').trigger('click')
+
+    expect(mockClearError).toHaveBeenCalledTimes(1)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirmImport persists validated manifest and navigates to workspace when confirmed', async () => {
+    const successResult = {
+      success: true,
+      totalRows: 5,
+      validRows: 5,
+      errorRows: [],
+      warnings: [],
+      truncated: false,
+    }
+    mockConfirm.mockResolvedValueOnce(true)
+    mockValidateImport.mockResolvedValueOnce(successResult)
+    mockParseManifest.mockResolvedValueOnce({
+      format: BACKUP_FORMAT,
+      version: 1,
+      roomId: 'room-1',
+      roomName: 'Test Room',
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      exportedBy: 'Alice',
+      stats: { totalElements: 3, totalImages: 0, totalComments: 1, totalChatMessages: 1, totalSnapshots: 0 },
+      data: {},
+    })
+
+    const wrapper = await mountPage({ lastImportResult: successResult })
+    const fileInput = wrapper.find('[data-testid="file-input"]')
+    const fakeFile = new File(['{}'], 'backup.json', { type: 'application/json' })
+    Object.defineProperty(fileInput.element, 'files', { value: [fakeFile], configurable: true })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    const confirmBtn = wrapper.find('[data-testid="confirm-import-btn"]')
+    expect(confirmBtn.exists()).toBe(true)
+    await confirmBtn.trigger('click')
+    await flushPromises()
+
+    expect(mockConfirm).toHaveBeenCalledTimes(1)
+    expect(mockPersistImport).toHaveBeenCalledTimes(1)
+    expect(mockPush).toHaveBeenCalledWith({ name: 'workspace', params: { roomId: 'room-1' } })
+    expect(mockToastSuccess).toHaveBeenCalledWith('Backup imported successfully.')
+  })
+
+  it('confirmImport shows persist error when import persistence fails', async () => {
+    const successResult = {
+      success: true,
+      totalRows: 3,
+      validRows: 3,
+      errorRows: [],
+      warnings: [],
+      truncated: false,
+    }
+    mockConfirm.mockResolvedValueOnce(true)
+    mockPersistImport.mockRejectedValueOnce(new Error('DB write failed'))
+    mockValidateImport.mockResolvedValueOnce(successResult)
+    mockParseManifest.mockResolvedValueOnce({
+      format: BACKUP_FORMAT,
+      version: 1,
+      roomId: 'room-1',
+      roomName: 'Test Room',
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      exportedBy: 'Alice',
+      stats: { totalElements: 1, totalImages: 0, totalComments: 1, totalChatMessages: 1, totalSnapshots: 0 },
+      data: {},
+    })
+
+    const wrapper = await mountPage({
+      lastImportResult: successResult,
+      lastError: 'Persist failed from store',
+    })
+    const fileInput = wrapper.find('[data-testid="file-input"]')
+    const fakeFile = new File(['{}'], 'backup.json', { type: 'application/json' })
+    Object.defineProperty(fileInput.element, 'files', { value: [fakeFile], configurable: true })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="confirm-import-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(mockPersistImport).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="persist-error"]').exists()).toBe(true)
+    expect(mockToastError).toHaveBeenCalledWith('Persist failed from store')
+  })
+
+  it('cancelImport clears parsed manifest and resets import actions', async () => {
+    const successResult = {
+      success: true,
+      totalRows: 2,
+      validRows: 2,
+      errorRows: [],
+      warnings: [],
+      truncated: false,
+    }
+    mockValidateImport.mockResolvedValueOnce(successResult)
+    mockParseManifest.mockResolvedValueOnce({
+      format: BACKUP_FORMAT,
+      version: 1,
+      roomId: 'room-1',
+      roomName: 'Test Room',
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      exportedBy: 'Alice',
+      stats: { totalElements: 1, totalImages: 0, totalComments: 1, totalChatMessages: 0, totalSnapshots: 0 },
+      data: {},
+    })
+
+    const wrapper = await mountPage({ lastImportResult: successResult })
+    const fileInput = wrapper.find('[data-testid="file-input"]')
+    const fakeFile = new File(['{}'], 'backup.json', { type: 'application/json' })
+    Object.defineProperty(fileInput.element, 'files', { value: [fakeFile], configurable: true })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="confirm-import-btn"]').exists()).toBe(true)
+
+    const cancelBtn = wrapper.find('.backup-page__import-actions .backup-page__btn')
+    await cancelBtn.trigger('click')
+    await flushPromises()
+
+    expect(mockClearError).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="confirm-import-btn"]').exists()).toBe(false)
+  })
 })

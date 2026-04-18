@@ -209,4 +209,53 @@ describe('ChatPanel', () => {
     const wrapper = await mountPanel()
     expect(wrapper.text().toLowerCase()).toMatch(/no\s+messages|start|first/i)
   })
+
+  it('pins a message when pin button is clicked', async () => {
+    const wrapper = await mountPanel()
+    const pinBtn = wrapper.find('[data-testid="pin-btn-msg-1"]')
+    expect(pinBtn.exists()).toBe(true)
+
+    await pinBtn.trigger('click')
+    await flushPromises()
+
+    expect(mockPinMessage).toHaveBeenCalledWith('room-1', 'msg-1', TEST_ACTOR)
+  })
+
+  it('unpinned row action calls unpinMessage', async () => {
+    const { useChatStore } = await import('@/stores/chat-store')
+    vi.mocked(useChatStore).mockReturnValueOnce({
+      messages: [makeMessage('msg-1', true)],
+      pinned: [makePinned('msg-1')],
+      isLoading: false,
+      lastError: null,
+      loadChat: vi.fn(async () => {}),
+      sendMessage: mockSendMessage,
+      pinMessage: mockPinMessage,
+      unpinMessage: mockUnpinMessage,
+    } as any)
+
+    const wrapper = await mountPanel()
+    const unpinBtn = wrapper.find('.chat-panel__unpin-btn')
+    expect(unpinBtn.exists()).toBe(true)
+
+    await unpinBtn.trigger('click')
+    await flushPromises()
+
+    expect(mockUnpinMessage).toHaveBeenCalledWith('room-1', 'msg-1', TEST_ACTOR)
+  })
+
+  it('pressing Enter (without Shift) sends a message', async () => {
+    const wrapper = await mountPanel()
+    const textarea = wrapper.find('textarea')
+
+    await textarea.setValue('Sent by Enter')
+    await textarea.trigger('keydown', {
+      key: 'Enter',
+      shiftKey: false,
+      preventDefault: vi.fn(),
+    })
+    await flushPromises()
+
+    expect(mockSendMessage).toHaveBeenCalled()
+  })
 })

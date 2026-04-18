@@ -6,18 +6,36 @@
 # unit tests are executed.
 #
 # Usage:
-#   bash repo/run_tests.sh               # run unit/integration suite
-#   bash repo/run_tests.sh --coverage    # run unit/integration with V8 coverage
+#   bash repo/run_tests.sh               # run unit/integration suite, then e2e
+#   bash repo/run_tests.sh --coverage    # run unit/integration with V8 coverage, then e2e
 #   bash repo/run_tests.sh --e2e         # run Playwright browser journey suite
-#   bash repo/run_tests.sh --all         # run coverage + e2e suites
+#   bash repo/run_tests.sh --all         # alias for --coverage (coverage + e2e)
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+cleanup_artifacts() {
+  local frontend_dir="$SCRIPT_DIR/frontend"
+  local node_modules_dir="$frontend_dir/node_modules"
+  local coverage_dir="$frontend_dir/coverage"
+
+  # Remove empty host-side node_modules placeholder if present.
+  if [[ -d "$node_modules_dir" ]] && [[ -z "$(ls -A "$node_modules_dir" 2>/dev/null)" ]]; then
+    rmdir "$node_modules_dir" || true
+  fi
+
+  # Remove stale coverage artifact folder when coverage reporter output is disabled.
+  if [[ -d "$coverage_dir" ]]; then
+    rm -rf "$coverage_dir"
+  fi
+}
+
+trap cleanup_artifacts EXIT
+
 MODE="test"
 RUN_UNIT="true"
-RUN_E2E="false"
+RUN_E2E="true"
 
 for arg in "$@"; do
   case "$arg" in
@@ -35,6 +53,7 @@ for arg in "$@"; do
       ;;
     --help)
       echo "Usage: bash repo/run_tests.sh [--coverage|--e2e|--all]"
+      echo "  (default runs unit/integration followed by e2e)"
       exit 0
       ;;
     *)

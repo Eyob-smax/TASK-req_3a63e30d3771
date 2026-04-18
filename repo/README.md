@@ -26,6 +26,8 @@ ForgeRoom is production-ready for a frontend-only deployment path.
 ```bash
 cd repo
 docker compose up --build
+# Strict-compatibility alias (equivalent command)
+docker-compose up --build
 ```
 
 ## Access Method
@@ -83,9 +85,54 @@ Coverage thresholds:
 - 90% functions
 - 80% branches
 
-E2E notes:
-- E2E runs through Docker Compose profile `e2e` via Playwright.
-- The browser suite targets route accessibility and guard behavior from a real browser context.
+### Coverage and Observability
+
+Unit/integration coverage artifacts:
+
+```bash
+bash repo/run_tests.sh --coverage
+```
+
+- Coverage reporter: V8 text output in terminal logs.
+- Coverage thresholds are enforced and fail the run when below limits.
+- Thresholds: 90% lines, 90% statements, 90% functions, 80% branches.
+
+E2E execution artifacts:
+
+```bash
+bash repo/run_tests.sh --e2e
+```
+
+- Playwright reporter: list.
+- Browser project: Chromium.
+- Per-test timeout: 30 seconds.
+- Per-expect timeout: 5 seconds.
+- Retries: 0.
+
+Pass criteria:
+
+- Unit/integration: all tests pass and coverage thresholds are met.
+- E2E: all browser tests pass for route guards and workflow journeys.
+- Full suite: both coverage and E2E commands pass without lowering thresholds.
+
+### Test Traceability (R1-R20)
+
+- Requirement-to-test coverage is tracked for all requirements in [`docs/requirements-to-test.md`](../docs/requirements-to-test.md).
+- Unit/integration tests validate frontend domain logic (stores, engines, services, validators, serializers, pages/components).
+- Browser e2e tests validate route accessibility and auth-guard behavior from a real browser context.
+- Test files include `REQ: R<n>` anchors where applicable to keep requirement mapping discoverable in-source.
+
+### Test Coverage Model (Frontend-Only Project)
+
+This repository has no backend HTTP API surface.
+
+Coverage quality is evaluated using frontend criteria:
+
+- Unit/integration depth across stores, engines, services, validators, serializers, and UI modules.
+- Browser E2E workflow behavior and route-guard behavior.
+- Core domain logic validation in frontend modules.
+
+Backend HTTP endpoint coverage rules are not applicable to this repository.
 
 ## Project Structure
 
@@ -125,6 +172,12 @@ repo/
 - Session policy: 30-minute inactivity lock + 8-hour forced sign-out.
 - Roles (Host, Reviewer, Participant, Guest) are UI personas only, not a security boundary.
 
+Security boundary note:
+
+- Authentication is local-only and intended for local workspace continuity.
+- Profile passphrases do not provide server-grade identity or cross-device trust.
+- Authorization is a UI policy layer, not a hardened security perimeter.
+
 ## Environment Variables
 
 No custom environment variables are required.
@@ -144,3 +197,37 @@ No custom environment variables are required.
 - Collaboration is LAN-first via WebRTC and local persistence.
 - Pairing flow is manual copy/paste text exchange.
 - Forgot passphrase cannot be recovered; create a new profile.
+
+## Troubleshooting
+
+### Browser Data Cleared
+
+If profiles or rooms disappear after a browser reset, site storage was cleared.
+ForgeRoom stores profile/session/workspace data in IndexedDB + LocalStorage on this browser.
+
+- Avoid clearing site data for `http://localhost:5173` unless you want a full reset.
+- Export backups before browser cleanups (`Workspace` -> `Backup` -> `Download Backup`).
+- If data was cleared, recreate profile(s) and re-import backup files.
+
+### Multi-Tab Conflicts
+
+If conflict toasts appear when the same room is open in multiple tabs, this is expected conflict signaling.
+
+- Prefer one active editing tab per room.
+- If conflict appears, keep the desired tab and reload the other tab.
+
+### Session Lock and Sign-Out
+
+If redirected to `/profile`, session timers likely fired.
+
+- Inactivity lock: 30 minutes.
+- Forced sign-out: 8 hours.
+- Unlock with passphrase to resume, or sign in again after forced sign-out.
+
+### Browser API Support
+
+If canvas/collaboration features fail, verify your browser supports required APIs listed in **Browser Requirements**.
+
+- Ensure JavaScript is enabled.
+- Disable extensions that block IndexedDB/WebRTC/BroadcastChannel.
+- Try a clean/incognito window to isolate extension interference.

@@ -47,11 +47,12 @@ vi.mock('@/components/workspace/WorkspaceToolbar.vue', () => ({
     ],
     emits: ['tool-change', 'open-snapshots', 'open-members', 'open-backup', 'open-pairing'],
     template: `
-      <div class="ws-toolbar" :data-disabled="disabled" :data-autosave-status="autosaveStatus">
+      <div class="ws-toolbar" :data-disabled="disabled" :data-autosave-status="autosaveStatus" :data-active-tool="activeTool">
         <button data-testid="stub-open-pairing" @click="$emit('open-pairing')">pair</button>
         <button data-testid="stub-open-backup" @click="$emit('open-backup')">backup</button>
         <button data-testid="stub-open-snapshots" @click="$emit('open-snapshots')">snapshots</button>
         <button data-testid="stub-open-members" @click="$emit('open-members')">members</button>
+        <button data-testid="stub-tool-pen" @click="$emit('tool-change', 'pen')">pen</button>
       </div>
     `,
   },
@@ -70,6 +71,7 @@ vi.mock('@/components/workspace/CanvasHost.vue', () => ({
         :data-actor-name="actor?.displayName"
       >
         <button data-testid="stub-open-comments" @click="$emit('open-comments', 'el-seed')">c</button>
+        <button data-testid="stub-cursor-move" @click="$emit('cursor-move', { x: 11, y: 22 })">m</button>
       </div>
     `,
   },
@@ -110,6 +112,9 @@ vi.mock('@/services/broadcast-adaptor', () => ({
 vi.mock('@/services/webrtc-adaptor', () => ({
   attachWebRTCAdaptor: vi.fn(() => () => {}),
 }))
+vi.mock('@/services/collab-publisher', () => ({
+  publishPresence: vi.fn(),
+}))
 vi.mock('@/engine/autosave-scheduler', () => ({
   startRoomScheduler: vi.fn(),
   stopRoomScheduler: vi.fn(),
@@ -130,6 +135,8 @@ import { attachRoomBroadcast } from '@/services/broadcast-adaptor'
 import { attachWebRTCAdaptor } from '@/services/webrtc-adaptor'
 import { startRoomScheduler, stopRoomScheduler } from '@/engine/autosave-scheduler'
 import { RoomRole, MembershipState } from '@/models/room'
+import { usePreferencesStore } from '@/stores/preferences-store'
+import { publishPresence } from '@/services/collab-publisher'
 
 function mountPage(roomId = 'room-1') {
   return mount(WorkspacePage, { props: { roomId } })
@@ -306,6 +313,60 @@ describe('WorkspacePage', () => {
     await wrapper.find('[data-testid="stub-open-pairing"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('.workspace-page__pairing-overlay').exists()).toBe(true)
+  })
+
+  it('closes the pairing panel when close button is clicked', async () => {
+    const wrapper = await mountWithActiveMember()
+    await wrapper.find('[data-testid="stub-open-pairing"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.workspace-page__pairing-overlay').exists()).toBe(true)
+    await wrapper.find('.workspace-page__pairing-close').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.workspace-page__pairing-overlay').exists()).toBe(false)
+  })
+
+  it('opens backup route when toolbar emits open-backup', async () => {
+    const wrapper = await mountWithActiveMember()
+    await wrapper.find('[data-testid="stub-open-backup"]').trigger('click')
+    await flushPromises()
+
+    expect(mockPush).toHaveBeenCalledWith({ name: 'workspace-backup', params: { roomId: 'room-1' } })
+  })
+
+  it('updates active tool and persists preference when toolbar emits tool-change', async () => {
+    const preferences = usePreferencesStore()
+    const setLastToolSpy = vi.spyOn(preferences, 'setLastTool')
+
+    const wrapper = await mountWithActiveMember()
+    expect(wrapper.find('.ws-toolbar').attributes('data-active-tool')).toBe('select')
+
+    await wrapper.find('[data-testid="stub-tool-pen"]').trigger('click')
+    await flushPromises()
+
+    expect(setLastToolSpy).toHaveBeenCalledWith('pen')
+    expect(wrapper.find('.ws-toolbar').attributes('data-active-tool')).toBe('pen')
+  })
+
+  it('handles cursor-move by updating presence store and publishing presence', async () => {
+    const presence = usePresenceStore()
+    const updateCursorSpy = vi.spyOn(presence, 'updateCursor').mockImplementation(() => {})
+
+    const wrapper = await mountWithActiveMember()
+    await wrapper.find('[data-testid="stub-cursor-move"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCursorSpy).toHaveBeenCalledWith(
+      'me',
+      expect.objectContaining({ x: 11, y: 22 })
+    )
+    expect(publishPresence).toHaveBeenCalledWith(
+      'room-1',
+      'me',
+      expect.objectContaining({ x: 11, y: 22 }),
+      'Me',
+      '#f00'
+    )
   })
 
   it('calls openPanel("snapshots") on WorkspaceLayout when toolbar emits open-snapshots', async () => {

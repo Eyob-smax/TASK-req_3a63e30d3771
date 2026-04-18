@@ -17,11 +17,20 @@ const mockCreateSticky = vi.fn(async () => ({
   validation: { valid: true, errors: [] },
   element: { elementId: 'el-new', type: ElementType.StickyNote },
 }))
+const mockCreateArrow = vi.fn(async () => ({
+  validation: { valid: true, errors: [] },
+  element: { elementId: 'arrow-new', type: ElementType.Arrow },
+}))
+const mockCreatePenStroke = vi.fn(async () => ({
+  validation: { valid: true, errors: [] },
+  element: { elementId: 'pen-new', type: ElementType.PenStroke },
+}))
 const mockIngestImage = vi.fn(async () => ({
   validation: { valid: true, errors: [] },
   element: { elementId: 'img-new', type: 'image' },
 }))
 const mockDeleteElement = vi.fn(async () => ({ validation: { valid: true, errors: [] } }))
+const mockBringToFront = vi.fn(async () => ({ validation: { valid: true, errors: [] } }))
 
 const mockUiToastError = vi.fn()
 const mockUiToastWarning = vi.fn()
@@ -32,12 +41,12 @@ vi.mock('@/stores/element-store', () => ({
     elements: [],
     isLoading: false,
     createSticky: mockCreateSticky,
-    createArrow: vi.fn(async () => ({ validation: { valid: true, errors: [] }, element: null })),
-    createPenStroke: vi.fn(async () => ({ validation: { valid: true, errors: [] }, element: null })),
+    createArrow: mockCreateArrow,
+    createPenStroke: mockCreatePenStroke,
     ingestImage: mockIngestImage,
     updateElement: vi.fn(async () => ({ validation: { valid: true, errors: [] }, element: null })),
     deleteElement: mockDeleteElement,
-    bringToFront: vi.fn(async () => ({ validation: { valid: true, errors: [] }, element: null })),
+    bringToFront: mockBringToFront,
   })),
 }))
 
@@ -115,6 +124,21 @@ describe('CanvasHost', () => {
     await host.trigger('dblclick', { clientX: 100, clientY: 100 })
     await flushPromises()
     expect(wrapper.find('.canvas-host__sticky-editor').exists()).toBe(true)
+  })
+
+  it('confirms sticky editor and creates sticky note', async () => {
+    const wrapper = await mountCanvas({ activeTool: 'sticky' })
+    const host = wrapper.find('.canvas-host')
+    await host.trigger('dblclick', { clientX: 80, clientY: 60 })
+    await flushPromises()
+
+    await wrapper.find('.canvas-host__sticky-textarea').setValue('Draft note')
+    await wrapper.find('.canvas-host__sticky-confirm').trigger('click')
+    await flushPromises()
+
+    expect(mockCreateSticky).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('tool-used')).toBeTruthy()
+    expect(wrapper.find('.canvas-host__sticky-editor').exists()).toBe(false)
   })
 
   it('shows disabled overlay when disabled prop is true', async () => {
@@ -245,6 +269,45 @@ describe('CanvasHost', () => {
     expect(wrapper.emitted('cursor-move')).toBeTruthy()
   })
 
+  it('creates an arrow on pointer sequence in arrow mode', async () => {
+    const wrapper = await mountCanvas({ activeTool: 'arrow' })
+    const host = wrapper.find('.canvas-host')
+
+    await host.trigger('pointerdown', { clientX: 10, clientY: 10, pointerId: 1 })
+    await host.trigger('pointermove', { clientX: 40, clientY: 35, pointerId: 1 })
+    await host.trigger('pointerup', { clientX: 40, clientY: 35, pointerId: 1 })
+    await flushPromises()
+
+    expect(mockCreateArrow).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('tool-used')).toBeTruthy()
+  })
+
+  it('creates a pen stroke on pointer sequence in pen mode', async () => {
+    const wrapper = await mountCanvas({ activeTool: 'pen' })
+    const host = wrapper.find('.canvas-host')
+
+    await host.trigger('pointerdown', { clientX: 20, clientY: 20, pressure: 0.4, pointerId: 1 })
+    await host.trigger('pointermove', { clientX: 25, clientY: 24, pressure: 0.6, pointerId: 1 })
+    await host.trigger('pointermove', { clientX: 34, clientY: 28, pressure: 0.7, pointerId: 1 })
+    await host.trigger('pointerup', { clientX: 34, clientY: 28, pressure: 0.7, pointerId: 1 })
+    await flushPromises()
+
+    expect(mockCreatePenStroke).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('tool-used')).toBeTruthy()
+  })
+
+  it('sets copy dropEffect on dragover for image tool', async () => {
+    const wrapper = await mountCanvas({ activeTool: 'image' })
+    const host = wrapper.find('.canvas-host')
+    const dragEvent = new Event('dragover', { bubbles: true, cancelable: true }) as DragEvent
+    const dataTransfer = { dropEffect: 'none' }
+    Object.defineProperty(dragEvent, 'dataTransfer', { value: dataTransfer })
+
+    host.element.dispatchEvent(dragEvent)
+
+    expect(dataTransfer.dropEffect).toBe('copy')
+  })
+
   it('renders blob-backed image element when image blob exists', async () => {
     const imageEl = {
       elementId: 'el-img-1',
@@ -287,5 +350,85 @@ describe('CanvasHost', () => {
     await flushPromises()
     expect(wrapper.find('.canvas-host__image').exists()).toBe(true)
     expect(wrapper.find('.canvas-host__image-placeholder').exists()).toBe(false)
+
+    wrapper.unmount()
+    expect((globalThis as any).URL.revokeObjectURL).toHaveBeenCalled()
+  })
+
+  it('bring-to-front and delete actions call element store handlers', async () => {
+    const stickyEl = {
+      elementId: 'el-action',
+      roomId: 'room-1',
+      type: ElementType.StickyNote,
+      position: { x: 20, y: 20 },
+      dimensions: { width: 100, height: 60 },
+      backgroundColor: '#fef9c3',
+      textColor: '#1e293b',
+      fontSize: 14,
+      text: 'Action target',
+      zIndex: 1,
+    }
+    const { useElementStore } = await import('@/stores/element-store')
+    vi.mocked(useElementStore).mockReturnValueOnce({
+      elements: [stickyEl],
+      isLoading: false,
+      createSticky: mockCreateSticky,
+      createArrow: mockCreateArrow,
+      createPenStroke: mockCreatePenStroke,
+      ingestImage: mockIngestImage,
+      updateElement: vi.fn(),
+      deleteElement: mockDeleteElement,
+      bringToFront: mockBringToFront,
+    } as any)
+
+    const wrapper = await mountCanvas({ activeTool: 'select' })
+    await wrapper.find('.canvas-host__sticky').trigger('click')
+    await flushPromises()
+
+    const actionButtons = wrapper.findAll('.canvas-host__action-btn')
+    await actionButtons[0].trigger('click')
+    await actionButtons[1].trigger('click')
+    await flushPromises()
+
+    expect(mockBringToFront).toHaveBeenCalledWith('el-action', TEST_ACTOR)
+    expect(mockDeleteElement).toHaveBeenCalledWith('el-action', TEST_ACTOR)
+  })
+
+  it('keyboard delete removes selected element and clears selection', async () => {
+    const stickyEl = {
+      elementId: 'el-kbd',
+      roomId: 'room-1',
+      type: ElementType.StickyNote,
+      position: { x: 20, y: 20 },
+      dimensions: { width: 100, height: 60 },
+      backgroundColor: '#fef9c3',
+      textColor: '#1e293b',
+      fontSize: 14,
+      text: 'Delete target',
+      zIndex: 1,
+    }
+    const { useElementStore } = await import('@/stores/element-store')
+    vi.mocked(useElementStore).mockReturnValueOnce({
+      elements: [stickyEl],
+      isLoading: false,
+      createSticky: mockCreateSticky,
+      createArrow: mockCreateArrow,
+      createPenStroke: mockCreatePenStroke,
+      ingestImage: mockIngestImage,
+      updateElement: vi.fn(),
+      deleteElement: mockDeleteElement,
+      bringToFront: mockBringToFront,
+    } as any)
+
+    const wrapper = await mountCanvas({ activeTool: 'select' })
+    await wrapper.find('.canvas-host__sticky').trigger('click')
+    await flushPromises()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }))
+    await flushPromises()
+
+    expect(mockDeleteElement).toHaveBeenCalledWith('el-kbd', TEST_ACTOR)
+    const elementSelectedEvents = wrapper.emitted('element-selected') ?? []
+    expect(elementSelectedEvents.some((entry) => entry[0] === null)).toBe(true)
   })
 })

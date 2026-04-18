@@ -23,7 +23,7 @@ services:
     command: sh -c "npm ci && npm run ${TEST_MODE:-test}"
 
   frontend-e2e:
-    image: mcr.microsoft.com/playwright:v1.54.2-jammy
+    image: mcr.microsoft.com/playwright:v1.59.1-jammy
     profiles: ["e2e"]
     depends_on:
       - frontend

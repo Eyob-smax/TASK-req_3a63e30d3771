@@ -16,7 +16,7 @@ export default defineConfig({
     globals: true,
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'lcov'],
+      reporter: ['text'],
       include: ['src/**/*.{ts,vue}'],
       exclude: [
         'src/env.d.ts',

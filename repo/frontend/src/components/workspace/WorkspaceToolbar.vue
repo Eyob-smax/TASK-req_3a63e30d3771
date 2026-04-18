@@ -51,6 +51,7 @@ const atElementCap = computed(() => props.elementCount >= MAX_ELEMENTS_PER_ROOM)
         :key="tool.key"
         class="ws-toolbar__tool"
         :class="{ 'ws-toolbar__tool--active': activeTool === tool.key }"
+        :data-testid="`tool-${tool.key}`"
         :title="`${tool.label} (${tool.shortcut})`"
         :disabled="(atElementCap && tool.key !== 'select') || disabled"
         @click="emit('tool-change', tool.key)"
