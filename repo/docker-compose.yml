@@ -12,6 +12,12 @@ services:
     ports:
       - "5173:80"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   frontend-tests:
     image: node:20-alpine
@@ -26,7 +32,8 @@ services:
     image: mcr.microsoft.com/playwright:v1.59.1-jammy
     profiles: ["e2e"]
     depends_on:
-      - frontend
+      frontend:
+        condition: service_healthy
     working_dir: /app
     volumes:
       - ./frontend:/app
