@@ -1,7 +1,9 @@
 1. Verdict
+
 - Partial Pass
 
 2. Scope and Verification Boundary
+
 - Reviewed scope: static artifacts under this working directory only, including docs, frontend source, routing, stores/engines/services, config, and tests.
 - Excluded inputs: .tmp and all descendants were excluded from review evidence and conclusions.
 - Not executed: project runtime, tests, Docker/containers, browser flows, or network behavior were not executed.
@@ -10,6 +12,7 @@
 - Manual verification required for runtime-only claims such as actual peer connection reliability, long-session timer firing behavior, and final responsive rendering fidelity.
 
 3. Prompt / Repository Mapping Summary
+
 - Prompt core business goals:
 - Offline-first pure frontend collaboration workspace with whiteboard, chat, threaded comments/@mentions, approvals/membership flow, presence, activity feed, autosave/snapshots/rollback, BroadcastChannel multi-tab coordination, WebRTC DataChannel LAN sync, backup import/export.
 - Required pages / main flow / key states / constraints mapped:
@@ -22,6 +25,7 @@
 - Backup validation and caps: [repo/frontend/src/stores/import-export-store.ts#L196](repo/frontend/src/stores/import-export-store.ts#L196), [repo/frontend/src/stores/import-export-store.ts#L266](repo/frontend/src/stores/import-export-store.ts#L266), [repo/frontend/src/validators/import-validators.ts#L35](repo/frontend/src/validators/import-validators.ts#L35)
 
 4. High / Blocker Coverage Panel
+
 - A. Prompt-fit / completeness blockers: Fail
 - Short reason: Membership state machine enforcement is broken in the workspace action gate, allowing non-active states to act; join/approval flow is materially weakened.
 - Evidence: [repo/frontend/src/pages/WorkspacePage.vue#L80](repo/frontend/src/pages/WorkspacePage.vue#L80), [repo/frontend/src/pages/WorkspacePage.vue#L82](repo/frontend/src/pages/WorkspacePage.vue#L82), [repo/frontend/src/validators/room-validators.ts#L69](repo/frontend/src/validators/room-validators.ts#L69), [repo/frontend/src/validators/room-validators.ts#L86](repo/frontend/src/validators/room-validators.ts#L86), [repo/frontend/src/validators/room-validators.ts#L94](repo/frontend/src/validators/room-validators.ts#L94)
@@ -44,10 +48,11 @@
 
 - E. Test-critical gaps: Partial Pass
 - Short reason: Test footprint is substantial, but critical membership-state enforcement gaps (F-01/F-02) are not covered by targeted negative tests.
-- Evidence: [repo/frontend/unit_tests/pages/WorkspacePage.test.ts#L244](repo/frontend/unit_tests/pages/WorkspacePage.test.ts#L244), [repo/frontend/unit_tests/pages/WorkspacePage.integration.test.ts#L105](repo/frontend/unit_tests/pages/WorkspacePage.integration.test.ts#L105), [repo/frontend/unit_tests/router/guards.test.ts#L60](repo/frontend/unit_tests/router/guards.test.ts#L60)
+- Evidence: [repo/frontend/unit_tests/pages/WorkspacePage.integration.test.ts#L273](repo/frontend/unit_tests/pages/WorkspacePage.integration.test.ts#L273), [repo/frontend/unit_tests/pages/WorkspacePage.integration.test.ts#L279](repo/frontend/unit_tests/pages/WorkspacePage.integration.test.ts#L279), [repo/frontend/unit_tests/router/guards.test.ts#L60](repo/frontend/unit_tests/router/guards.test.ts#L60)
 - Finding IDs: none (test gap tied to F-01/F-02)
 
 5. Confirmed Blocker / High Findings
+
 - Finding ID: F-01
 - Severity: Blocker
 - Conclusion: Workspace action gating allows non-active membership states to perform core actions.
@@ -88,6 +93,7 @@
 - Add guard tests for non-member and non-active member workspace access.
 
 6. Other Findings Summary
+
 - Severity: Medium
 - Conclusion: README test command description is inconsistent with actual runner default behavior.
 - Evidence:
@@ -96,6 +102,7 @@
 - Minimum actionable fix: Align README and script help text to one default behavior, and state clearly whether default runs e2e.
 
 7. Data Exposure and Delivery Risk Summary
+
 - Real sensitive information exposure: Pass
 - Evidence: No real token/key credentials found in source; logger explicitly sanitizes sensitive keys in payloads: [repo/frontend/src/utils/logger.ts#L18](repo/frontend/src/utils/logger.ts#L18)
 
@@ -115,6 +122,7 @@
 - Boundary: Not real production secrets; still increases accidental misuse risk if copied unchanged.
 
 8. Test Sufficiency Summary
+
 - Test Overview
 - Unit tests exist: yes (extensive Vitest setup and include pattern).
 - Component tests exist: yes.
@@ -142,12 +150,14 @@
 - Partial Pass
 
 9. Engineering Quality Summary
+
 - Architecture is generally modular and professional for a frontend-only SPA: pages/components/stores/engines/services/validators/serializers are clearly separated.
 - Major maintainability risk: duplicated/inconsistent authorization-state logic.
 - Validation utilities define correct membership action rules, but workspace gating uses a separate, weaker condition, creating drift and high-risk regressions.
 - Evidence: [repo/frontend/src/validators/room-validators.ts#L69](repo/frontend/src/validators/room-validators.ts#L69), [repo/frontend/src/pages/WorkspacePage.vue#L82](repo/frontend/src/pages/WorkspacePage.vue#L82)
 
 10. Visual and Interaction Summary
+
 - Static structure supports basic UI differentiation and interaction affordances:
 - Distinct functional panels/components are wired in workspace shell: [repo/frontend/src/pages/WorkspacePage.vue#L277](repo/frontend/src/pages/WorkspacePage.vue#L277), [repo/frontend/src/pages/WorkspacePage.vue#L291](repo/frontend/src/pages/WorkspacePage.vue#L291), [repo/frontend/src/pages/WorkspacePage.vue#L299](repo/frontend/src/pages/WorkspacePage.vue#L299)
 - Loading/empty/error patterns exist across key pages/components.
@@ -155,10 +165,10 @@
 
 11. Next Actions
 1. Fix F-01 by changing workspace actionability to Active membership only and enforce the same rule in write paths before mutations.
-2. Fix F-02 by adding membership-aware route/page guard logic for workspace routes and redirect non-active/non-member users.
-3. Add targeted regression tests for Requested/PendingSecondApproval/Rejected action blocking in workspace interactions.
-4. Add route and page tests for non-member workspace access denial and approved-member access allowance.
-5. Refactor membership permission checks to one shared helper used by both UI gating and mutation execution paths.
-6. Align README and run_tests.sh default behavior documentation for static verifiability consistency.
-7. Add a short docs note clarifying workspace visibility policy (who can open/read workspace before approval).
-8. Manually verify runtime behaviors after fixes: join/approval transitions, pending/rejected action blocking, and workspace access redirects.
+1. Fix F-02 by adding membership-aware route/page guard logic for workspace routes and redirect non-active/non-member users.
+1. Add targeted regression tests for Requested/PendingSecondApproval/Rejected action blocking in workspace interactions.
+1. Add route and page tests for non-member workspace access denial and approved-member access allowance.
+1. Refactor membership permission checks to one shared helper used by both UI gating and mutation execution paths.
+1. Align README and run_tests.sh default behavior documentation for static verifiability consistency.
+1. Add a short docs note clarifying workspace visibility policy (who can open/read workspace before approval).
+1. Manually verify runtime behaviors after fixes: join/approval transitions, pending/rejected action blocking, and workspace access redirects.

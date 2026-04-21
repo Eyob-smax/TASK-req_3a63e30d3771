@@ -1,70 +1,116 @@
 // REQ: R5/R7/R8 — Workspace integration: mounts REAL CanvasHost + ChatPanel + CommentDrawer
 // so the actor-prop contract and the open-comments flow are exercised without stubs.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import { setActivePinia, createPinia } from 'pinia'
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { mount, flushPromises } from "@vue/test-utils";
+import { setActivePinia, createPinia } from "pinia";
 
-const mockPush = vi.fn()
-vi.mock('vue-router', () => ({
+const mockPush = vi.fn();
+vi.mock("vue-router", () => ({
   useRouter: () => ({ push: mockPush }),
-}))
+}));
 
 // Keep the page chrome minimal — but do NOT stub CanvasHost / ChatPanel / CommentDrawer.
-vi.mock('@/layouts/AppLayout.vue', () => ({
-  default: { template: '<div><slot /></div>' },
-}))
-vi.mock('@/components/workspace/WorkspaceLayout.vue', () => ({
+vi.mock("@/layouts/AppLayout.vue", () => ({
+  default: { template: "<div><slot /></div>" },
+}));
+vi.mock("@/components/workspace/WorkspaceLayout.vue", async () => {
+  const { defineComponent, ref } = await import("vue");
+  return {
+    default: defineComponent({
+      name: "WorkspaceLayoutMock",
+      setup(_, { expose }) {
+        const rightPanel = ref("chat");
+        function openPanel(
+          panel: "chat" | "activity" | "members" | "snapshots",
+        ) {
+          rightPanel.value = panel;
+        }
+        expose({ openPanel });
+        return { rightPanel };
+      },
+      template: `
+        <div class="ws-layout" :data-right-panel="rightPanel">
+          <slot name="toolbar" />
+          <slot name="tool-sidebar" />
+          <slot name="canvas" />
+          <slot v-if="rightPanel === 'chat'" name="chat-panel" />
+          <slot v-if="rightPanel === 'activity'" name="activity-panel" />
+          <slot v-if="rightPanel === 'members'" name="member-list" />
+          <slot v-if="rightPanel === 'snapshots'" name="snapshot-drawer" />
+          <slot name="comment-drawer" />
+        </div>
+      `,
+    }),
+  };
+});
+vi.mock("@/components/workspace/WorkspaceToolbar.vue", async () => {
+  const { defineComponent } = await import("vue");
+  return {
+    default: defineComponent({
+      name: "WorkspaceToolbarMock",
+      props: {
+        autosaveStatus: {
+          type: String,
+          default: "idle",
+        },
+      },
+      emits: [
+        "tool-change",
+        "open-snapshots",
+        "open-members",
+        "open-backup",
+        "open-pairing",
+      ],
+      template: `
+        <div class="ws-toolbar-stub" :data-autosave-status="autosaveStatus">
+          <button class="toolbar-open-snapshots" @click="$emit('open-snapshots')">snapshots</button>
+          <button class="toolbar-open-members" @click="$emit('open-members')">members</button>
+          <button class="toolbar-open-backup" @click="$emit('open-backup')">backup</button>
+        </div>
+      `,
+    }),
+  };
+});
+vi.mock("@/components/workspace/WorkspaceToolSidebar.vue", () => ({
+  default: { template: "<div />" },
+}));
+vi.mock("@/components/workspace/ActivityFeedPanel.vue", () => ({
+  default: { template: "<div />" },
+}));
+vi.mock("@/components/workspace/MemberListSidebar.vue", () => ({
+  default: { template: '<div class="member-list-sidebar-stub" />' },
+}));
+vi.mock("@/components/workspace/SnapshotDrawer.vue", () => ({
+  default: { template: '<div class="snapshot-drawer-stub" />' },
+}));
+vi.mock("@/components/workspace/PairingPanel.vue", () => ({
+  default: { template: "<div />" },
+}));
+vi.mock("@/components/workspace/PresenceAvatarStack.vue", () => ({
+  default: { template: "<div />" },
+}));
+vi.mock("@/components/workspace/CursorOverlay.vue", () => ({
   default: {
-    template: `
-      <div class="ws-layout">
-        <slot name="toolbar" />
-        <slot name="tool-sidebar" />
-        <slot name="canvas" />
-        <slot name="chat-panel" />
-        <slot name="activity-panel" />
-        <slot name="member-list" />
-        <slot name="snapshot-drawer" />
-        <slot name="comment-drawer" />
-      </div>
-    `,
-  },
-}))
-vi.mock('@/components/workspace/WorkspaceToolbar.vue', () => ({
-  default: {
-    template: '<div class="ws-toolbar-stub" />',
-    emits: ['tool-change', 'open-snapshots', 'open-members', 'open-backup', 'open-pairing'],
-  },
-}))
-vi.mock('@/components/workspace/WorkspaceToolSidebar.vue', () => ({
-  default: { template: '<div />' },
-}))
-vi.mock('@/components/workspace/ActivityFeedPanel.vue', () => ({ default: { template: '<div />' } }))
-vi.mock('@/components/workspace/MemberListSidebar.vue', () => ({ default: { template: '<div />' } }))
-vi.mock('@/components/workspace/SnapshotDrawer.vue', () => ({ default: { template: '<div />' } }))
-vi.mock('@/components/workspace/PairingPanel.vue', () => ({ default: { template: '<div />' } }))
-vi.mock('@/components/workspace/PresenceAvatarStack.vue', () => ({ default: { template: '<div />' } }))
-vi.mock('@/components/workspace/CursorOverlay.vue', () => ({
-  default: {
-    props: ['selfMemberId'],
+    props: ["selfMemberId"],
     template: '<div class="cursor-overlay-stub" />',
   },
-}))
+}));
 
 // Stub adaptors + autosave so mount does not start background work
-vi.mock('@/services/broadcast-adaptor', () => ({
+vi.mock("@/services/broadcast-adaptor", () => ({
   attachRoomBroadcast: vi.fn(() => () => {}),
-}))
-vi.mock('@/services/webrtc-adaptor', () => ({
+}));
+vi.mock("@/services/webrtc-adaptor", () => ({
   attachWebRTCAdaptor: vi.fn(() => () => {}),
-}))
-vi.mock('@/engine/autosave-scheduler', () => ({
+}));
+vi.mock("@/engine/autosave-scheduler", () => ({
   startRoomScheduler: vi.fn(),
   stopRoomScheduler: vi.fn(),
-}))
+}));
 
 // Stub collab-publisher so publish* calls triggered by real store paths do not reach the adaptors
-vi.mock('@/services/collab-publisher', () => ({
+vi.mock("@/services/collab-publisher", () => ({
   publishElement: vi.fn(),
   publishChat: vi.fn(),
   publishPin: vi.fn(),
@@ -73,151 +119,280 @@ vi.mock('@/services/collab-publisher', () => ({
   publishRollback: vi.fn(),
   publishConflict: vi.fn(),
   publishPresence: vi.fn(),
-}))
+}));
 
-import WorkspacePage from '@/pages/WorkspacePage.vue'
-import { useRoomStore } from '@/stores/room-store'
-import { useElementStore } from '@/stores/element-store'
-import { useChatStore } from '@/stores/chat-store'
-import { useCommentStore } from '@/stores/comment-store'
-import { useSnapshotStore } from '@/stores/snapshot-store'
-import { useActivityStore } from '@/stores/activity-store'
-import { usePresenceStore } from '@/stores/presence-store'
-import { useSessionStore } from '@/stores/session-store'
-import CanvasHost from '@/components/workspace/CanvasHost.vue'
-import ChatPanel from '@/components/workspace/ChatPanel.vue'
-import CommentDrawer from '@/components/workspace/CommentDrawer.vue'
-import { RoomRole, MembershipState } from '@/models/room'
+import WorkspacePage from "@/pages/WorkspacePage.vue";
+import { useRoomStore } from "@/stores/room-store";
+import { useElementStore } from "@/stores/element-store";
+import { useChatStore } from "@/stores/chat-store";
+import { useCommentStore } from "@/stores/comment-store";
+import { useSnapshotStore } from "@/stores/snapshot-store";
+import { useActivityStore } from "@/stores/activity-store";
+import { usePresenceStore } from "@/stores/presence-store";
+import { useSessionStore } from "@/stores/session-store";
+import CanvasHost from "@/components/workspace/CanvasHost.vue";
+import ChatPanel from "@/components/workspace/ChatPanel.vue";
+import CommentDrawer from "@/components/workspace/CommentDrawer.vue";
+import { startRoomScheduler } from "@/engine/autosave-scheduler";
+import { elementRepository } from "@/services/element-repository";
+import { RoomRole, MembershipState } from "@/models/room";
 
-async function mountIntegrated(opts: { memberState?: MembershipState | null; pairingCode?: string } = {}) {
-  const memberState = opts.memberState === undefined ? MembershipState.Active : opts.memberState
-  const room = useRoomStore()
-  const session = useSessionStore()
-  session.activeProfileId = 'me'
-  session.activeProfile = { profileId: 'me', displayName: 'Me', avatarColor: '#f00' } as any
-  vi.spyOn(room, 'loadRoom').mockImplementation(async () => {
-    room.activeRoom = { roomId: 'room-1', name: 'R', pairingCode: opts.pairingCode } as any
-    room.members = memberState === null
-      ? []
-      : [
-          {
-            memberId: 'me',
-            roomId: 'room-1',
-            displayName: 'Me',
-            role: RoomRole.Participant,
-            state: memberState,
-            avatarColor: '#f00',
-            joinedAt: '2026-04-01T00:00:00Z',
-            updatedAt: '2026-04-01T00:00:00Z',
-          } as any,
-        ]
-  })
-  const element = useElementStore()
-  const chat = useChatStore()
-  const comment = useCommentStore()
-  const snapshot = useSnapshotStore()
-  const activity = useActivityStore()
-  const presence = usePresenceStore()
-  vi.spyOn(element, 'loadElements').mockResolvedValue(undefined as any)
-  vi.spyOn(chat, 'loadChat').mockResolvedValue(undefined as any)
-  vi.spyOn(comment, 'loadThreads').mockResolvedValue(undefined as any)
-  vi.spyOn(snapshot, 'refresh').mockResolvedValue(undefined as any)
-  vi.spyOn(activity, 'refresh').mockResolvedValue(undefined as any)
-  vi.spyOn(presence, 'attach').mockImplementation(() => {})
-  const wrapper = mount(WorkspacePage, { props: { roomId: 'room-1' } })
-  await flushPromises()
-  return wrapper
+async function mountIntegrated(
+  opts: { memberState?: MembershipState | null; pairingCode?: string } = {},
+) {
+  const memberState =
+    opts.memberState === undefined ? MembershipState.Active : opts.memberState;
+  const room = useRoomStore();
+  const session = useSessionStore();
+  session.activeProfileId = "me";
+  session.activeProfile = {
+    profileId: "me",
+    displayName: "Me",
+    avatarColor: "#f00",
+  } as any;
+  vi.spyOn(room, "loadRoom").mockImplementation(async () => {
+    room.activeRoom = {
+      roomId: "room-1",
+      name: "R",
+      pairingCode: opts.pairingCode,
+    } as any;
+    room.members =
+      memberState === null
+        ? []
+        : [
+            {
+              memberId: "me",
+              roomId: "room-1",
+              displayName: "Me",
+              role: RoomRole.Participant,
+              state: memberState,
+              avatarColor: "#f00",
+              joinedAt: "2026-04-01T00:00:00Z",
+              updatedAt: "2026-04-01T00:00:00Z",
+            } as any,
+          ];
+  });
+  const element = useElementStore();
+  const chat = useChatStore();
+  const comment = useCommentStore();
+  const snapshot = useSnapshotStore();
+  const activity = useActivityStore();
+  const presence = usePresenceStore();
+  vi.spyOn(element, "loadElements").mockResolvedValue(undefined as any);
+  vi.spyOn(chat, "loadChat").mockResolvedValue(undefined as any);
+  vi.spyOn(comment, "loadThreads").mockResolvedValue(undefined as any);
+  vi.spyOn(snapshot, "refresh").mockResolvedValue(undefined as any);
+  vi.spyOn(activity, "refresh").mockResolvedValue(undefined as any);
+  vi.spyOn(presence, "attach").mockImplementation(() => {});
+  const wrapper = mount(WorkspacePage, { props: { roomId: "room-1" } });
+  await flushPromises();
+  return wrapper;
 }
 
-describe('WorkspacePage — real child component integration', () => {
+function getAutoSaveHandler(): () => Promise<void> {
+  const schedulerCall = vi.mocked(startRoomScheduler).mock.calls.at(-1);
+  if (!schedulerCall) {
+    throw new Error(
+      "Expected startRoomScheduler to be called during workspace mount.",
+    );
+  }
+  const schedulerCallbacks = schedulerCall[1] as {
+    onAutoSave: () => Promise<void>;
+  };
+  return schedulerCallbacks.onAutoSave;
+}
+
+describe("WorkspacePage — real child component integration", () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
-    mockPush.mockReset()
-    vi.clearAllMocks()
-  })
+    setActivePinia(createPinia());
+    mockPush.mockReset();
+    vi.clearAllMocks();
+  });
 
-  it('mounts real CanvasHost, ChatPanel, and CommentDrawer as child components', async () => {
-    const wrapper = await mountIntegrated()
-    expect(wrapper.findComponent(CanvasHost).exists()).toBe(true)
-    expect(wrapper.findComponent(ChatPanel).exists()).toBe(true)
-    expect(wrapper.findComponent(CommentDrawer).exists()).toBe(true)
-  })
+  it("mounts real CanvasHost, ChatPanel, and CommentDrawer as child components", async () => {
+    const wrapper = await mountIntegrated();
+    expect(wrapper.findComponent(CanvasHost).exists()).toBe(true);
+    expect(wrapper.findComponent(ChatPanel).exists()).toBe(true);
+    expect(wrapper.findComponent(CommentDrawer).exists()).toBe(true);
+  });
 
-  it('threads the actor object from WorkspacePage through to each real child via props', async () => {
-    const wrapper = await mountIntegrated()
-    const canvas = wrapper.findComponent(CanvasHost)
-    const chat = wrapper.findComponent(ChatPanel)
-    const drawer = wrapper.findComponent(CommentDrawer)
+  it("threads the actor object from WorkspacePage through to each real child via props", async () => {
+    const wrapper = await mountIntegrated();
+    const canvas = wrapper.findComponent(CanvasHost);
+    const chat = wrapper.findComponent(ChatPanel);
+    const drawer = wrapper.findComponent(CommentDrawer);
 
-    expect(canvas.props('actor')).toEqual({ memberId: 'me', displayName: 'Me' })
-    expect(chat.props('actor')).toEqual({ memberId: 'me', displayName: 'Me' })
-    expect(drawer.props('actor')).toEqual({ memberId: 'me', displayName: 'Me' })
-  })
+    expect(canvas.props("actor")).toEqual({
+      memberId: "me",
+      displayName: "Me",
+    });
+    expect(chat.props("actor")).toEqual({ memberId: "me", displayName: "Me" });
+    expect(drawer.props("actor")).toEqual({
+      memberId: "me",
+      displayName: "Me",
+    });
+  });
 
-  it('opens the comment drawer with the clicked element id when the real CanvasHost emits open-comments', async () => {
-    const wrapper = await mountIntegrated()
-    const canvas = wrapper.findComponent(CanvasHost)
-    canvas.vm.$emit('open-comments', 'el-real-seed')
-    await flushPromises()
-    const drawer = wrapper.findComponent(CommentDrawer)
-    expect(drawer.props('elementId')).toBe('el-real-seed')
-  })
+  it("opens the comment drawer with the clicked element id when the real CanvasHost emits open-comments", async () => {
+    const wrapper = await mountIntegrated();
+    const canvas = wrapper.findComponent(CanvasHost);
+    canvas.vm.$emit("open-comments", "el-real-seed");
+    await flushPromises();
+    const drawer = wrapper.findComponent(CommentDrawer);
+    expect(drawer.props("elementId")).toBe("el-real-seed");
+  });
 
-  describe('membership denial matrix', () => {
-    it('redirects to room-list when profile has no matching member record', async () => {
-      await mountIntegrated({ memberState: null })
-      expect(mockPush).toHaveBeenCalledWith({ name: 'room-list' })
-    })
+  it("opens snapshots panel when toolbar emits open-snapshots", async () => {
+    const wrapper = await mountIntegrated();
+    expect(wrapper.find(".snapshot-drawer-stub").exists()).toBe(false);
 
-    it('redirects Requested members to room-join with pairing code', async () => {
-      await mountIntegrated({ memberState: MembershipState.Requested, pairingCode: 'PAIR-123' })
-      expect(mockPush).toHaveBeenCalledWith({ name: 'room-join', query: { code: 'PAIR-123' } })
-    })
+    await wrapper.find(".toolbar-open-snapshots").trigger("click");
+    await flushPromises();
 
-    it('redirects PendingSecondApproval members to room-join', async () => {
-      await mountIntegrated({ memberState: MembershipState.PendingSecondApproval })
-      expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ name: 'room-join' }))
-    })
+    expect(wrapper.find(".ws-layout").attributes("data-right-panel")).toBe(
+      "snapshots",
+    );
+    expect(wrapper.find(".snapshot-drawer-stub").exists()).toBe(true);
+    expect(wrapper.find(".member-list-sidebar-stub").exists()).toBe(false);
+  });
 
-    it('redirects Rejected members to room-list', async () => {
-      await mountIntegrated({ memberState: MembershipState.Rejected })
-      expect(mockPush).toHaveBeenCalledWith({ name: 'room-list' })
-    })
+  it("opens members panel when toolbar emits open-members", async () => {
+    const wrapper = await mountIntegrated();
+    expect(wrapper.find(".member-list-sidebar-stub").exists()).toBe(false);
 
-    it('redirects Left members to room-list', async () => {
-      await mountIntegrated({ memberState: MembershipState.Left })
-      expect(mockPush).toHaveBeenCalledWith({ name: 'room-list' })
-    })
+    await wrapper.find(".toolbar-open-members").trigger("click");
+    await flushPromises();
 
-    it('does not attach broadcast/webrtc adaptors or load stores for non-Active members', async () => {
-      const broadcast = await import('@/services/broadcast-adaptor')
-      const webrtc = await import('@/services/webrtc-adaptor')
-      await mountIntegrated({ memberState: MembershipState.Requested, pairingCode: 'P-1' })
-      expect(broadcast.attachRoomBroadcast).not.toHaveBeenCalled()
-      expect(webrtc.attachWebRTCAdaptor).not.toHaveBeenCalled()
-      const element = useElementStore()
-      expect(element.loadElements).not.toHaveBeenCalled()
-    })
-  })
+    expect(wrapper.find(".ws-layout").attributes("data-right-panel")).toBe(
+      "members",
+    );
+    expect(wrapper.find(".member-list-sidebar-stub").exists()).toBe(true);
+    expect(wrapper.find(".snapshot-drawer-stub").exists()).toBe(false);
+  });
 
-  it('updates the presence store and publishes presence when the real CanvasHost emits cursor-move', async () => {
-    const wrapper = await mountIntegrated()
-    const presence = usePresenceStore()
-    const updateSpy = vi.spyOn(presence, 'updateCursor').mockImplementation(() => {})
-    const publisher = await import('@/services/collab-publisher')
-    const canvas = wrapper.findComponent(CanvasHost)
-    canvas.vm.$emit('cursor-move', { x: 42, y: 99 })
-    await flushPromises()
+  describe("membership denial matrix", () => {
+    it("redirects to room-list when profile has no matching member record", async () => {
+      await mountIntegrated({ memberState: null });
+      expect(mockPush).toHaveBeenCalledWith({ name: "room-list" });
+    });
+
+    it("redirects Requested members to room-join with pairing code", async () => {
+      await mountIntegrated({
+        memberState: MembershipState.Requested,
+        pairingCode: "PAIR-123",
+      });
+      expect(mockPush).toHaveBeenCalledWith({
+        name: "room-join",
+        query: { code: "PAIR-123" },
+      });
+    });
+
+    it("redirects PendingSecondApproval members to room-join", async () => {
+      await mountIntegrated({
+        memberState: MembershipState.PendingSecondApproval,
+      });
+      expect(mockPush).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "room-join" }),
+      );
+    });
+
+    it("redirects Rejected members to room-list", async () => {
+      await mountIntegrated({ memberState: MembershipState.Rejected });
+      expect(mockPush).toHaveBeenCalledWith({ name: "room-list" });
+    });
+
+    it("redirects Left members to room-list", async () => {
+      await mountIntegrated({ memberState: MembershipState.Left });
+      expect(mockPush).toHaveBeenCalledWith({ name: "room-list" });
+    });
+
+    it("does not attach broadcast/webrtc adaptors or load stores for non-Active members", async () => {
+      const broadcast = await import("@/services/broadcast-adaptor");
+      const webrtc = await import("@/services/webrtc-adaptor");
+      await mountIntegrated({
+        memberState: MembershipState.Requested,
+        pairingCode: "P-1",
+      });
+      expect(broadcast.attachRoomBroadcast).not.toHaveBeenCalled();
+      expect(webrtc.attachWebRTCAdaptor).not.toHaveBeenCalled();
+      const element = useElementStore();
+      expect(element.loadElements).not.toHaveBeenCalled();
+    });
+  });
+
+  it("updates the presence store and publishes presence when the real CanvasHost emits cursor-move", async () => {
+    const wrapper = await mountIntegrated();
+    const presence = usePresenceStore();
+    const updateSpy = vi
+      .spyOn(presence, "updateCursor")
+      .mockImplementation(() => {});
+    const publisher = await import("@/services/collab-publisher");
+    const canvas = wrapper.findComponent(CanvasHost);
+    canvas.vm.$emit("cursor-move", { x: 42, y: 99 });
+    await flushPromises();
     expect(updateSpy).toHaveBeenCalledWith(
-      'me',
+      "me",
       expect.objectContaining({ x: 42, y: 99 }),
-    )
+    );
     expect(publisher.publishPresence).toHaveBeenCalledWith(
-      'room-1',
-      'me',
+      "room-1",
+      "me",
       expect.objectContaining({ x: 42, y: 99 }),
-      'Me',
-      '#f00',
-    )
-  })
-})
+      "Me",
+      "#f00",
+    );
+  });
+
+  it("marks autosave as failed when the health check throws", async () => {
+    const wrapper = await mountIntegrated();
+    const countSpy = vi
+      .spyOn(elementRepository, "countByRoom")
+      .mockRejectedValueOnce(new Error("simulated idb failure"));
+
+    await getAutoSaveHandler()();
+    await flushPromises();
+
+    expect(countSpy).toHaveBeenCalledWith("room-1");
+    expect(
+      wrapper.find(".ws-toolbar-stub").attributes("data-autosave-status"),
+    ).toBe("failed");
+  });
+
+  it("marks autosave as failed when any store has a lastError", async () => {
+    const wrapper = await mountIntegrated();
+    const element = useElementStore();
+    element.lastError = "elements failed";
+    const countSpy = vi
+      .spyOn(elementRepository, "countByRoom")
+      .mockResolvedValueOnce(0);
+
+    await getAutoSaveHandler()();
+    await flushPromises();
+
+    expect(countSpy).toHaveBeenCalledWith("room-1");
+    expect(
+      wrapper.find(".ws-toolbar-stub").attributes("data-autosave-status"),
+    ).toBe("failed");
+  });
+
+  it("marks autosave as saved when health check passes and stores are healthy", async () => {
+    const wrapper = await mountIntegrated();
+    const element = useElementStore();
+    const chat = useChatStore();
+    const comment = useCommentStore();
+    element.lastError = null;
+    chat.lastError = null;
+    comment.lastError = null;
+    const countSpy = vi
+      .spyOn(elementRepository, "countByRoom")
+      .mockResolvedValueOnce(0);
+
+    await getAutoSaveHandler()();
+    await flushPromises();
+
+    expect(countSpy).toHaveBeenCalledWith("room-1");
+    expect(
+      wrapper.find(".ws-toolbar-stub").attributes("data-autosave-status"),
+    ).toBe("saved");
+  });
+});

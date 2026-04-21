@@ -10,6 +10,17 @@ import { SessionState } from '@/models/profile'
 import { MembershipState, RoomRole } from '@/models/room'
 import { useSessionStore } from '@/stores/session-store'
 
+// Stub all page components so lazy route imports resolve instantly without
+// pulling in heavy transitive dependencies (stores, adaptors, IndexedDB, WebRTC).
+vi.mock('@/pages/HomePage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/ProfileSelectPage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/RoomListPage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/RoomCreatePage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/RoomJoinPage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/WorkspacePage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/WorkspaceSettingsPage.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/pages/BackupPage.vue', () => ({ default: { template: '<div />' } }))
+
 const findMock = vi.fn()
 vi.mock('@/services/member-repository', () => ({
   memberRepository: {
